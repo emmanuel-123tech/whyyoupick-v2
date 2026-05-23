@@ -228,6 +228,7 @@ def recommend_items(req: backend.RecommendRequest):
             "Use concrete Nigerian context when helpful, but do not invent exact prices or business claims as facts.\n\n"
             "Return valid JSON only with: language (string), response_text (friendly conversational answer, 3-5 sentences), "
             "items (array of 3-5 objects with: name, item_id, score, reason, detailed_review, best_for, watch_out, category, image_keyword, image_url, source). "
+            "The visible UI currently shows the reason field, so reason must be a detailed 2-3 sentence mini-review, not a short phrase. "
             "Use item_id only for catalogue items; for general suggestions use an empty item_id and source='general'."
         ).format(persona_note, message, language, catalog_text)
         try:
@@ -251,6 +252,8 @@ def recommend_items(req: backend.RecommendRequest):
                 item.setdefault("detailed_review", item.get("reason", ""))
                 item.setdefault("best_for", "Users who want a strong fit for this request.")
                 item.setdefault("watch_out", "Check current availability, quality, and price before deciding.")
+                if len(str(item.get("reason", ""))) < 120 and item.get("detailed_review"):
+                    item["reason"] = item["detailed_review"]
             return result
         except Exception as exc:
             print("recommend override error: {}".format(exc))
@@ -261,7 +264,7 @@ def recommend_items(req: backend.RecommendRequest):
 def _recommend_fallback(message: str, category: str, language: str) -> dict:
     base_name = _keyword_name(message)
     intro_by_language = {
-        "Yoruba": "Mo ye ohun ti o n wa. Eyi ni awon aba ti o ba ibeere naa mu, pelu idi, ohun ti o dara fun, ati ohun ti o ye ki o ṣayẹwo.",
+        "Yoruba": "Mo ye ohun ti o n wa. Eyi ni awon aba ti o ba ibeere naa mu, pelu idi, ohun ti o dara fun, ati ohun ti o ye ki o sayewo.",
         "Igbo": "Aghotara m ihe ichoro. Lee aro ndi dabara na mkpa gi, tinyere uru ha na ihe i kwesiri ilebara anya.",
         "Hausa": "Na fahimci abin da kake nema. Ga wasu shawarwari masu amfani tare da dalili da abin lura kafin ka zaba.",
         "Nigerian Pidgin": "I understand wetin you dey find. See better options wey match your request, plus why e make sense and wetin you suppose check before you choose.",
@@ -275,12 +278,13 @@ def _recommend_fallback(message: str, category: str, language: str) -> dict:
     items = []
     for idx, (name, review) in enumerate(templates):
         keyword = "{} {}".format(base_name, category).strip().lower()
+        detailed_review = "{} It matches the user's request for '{}'. I would compare current reviews, distance or availability, and total cost before making the final decision.".format(review, message)
         items.append({
             "name": name,
             "item_id": "",
             "score": "{}%".format(88 - idx * 5),
-            "reason": review,
-            "detailed_review": "{} It matches the user's request for '{}'. I would compare current reviews, distance or availability, and total cost before making the final decision.".format(review, message),
+            "reason": detailed_review,
+            "detailed_review": detailed_review,
             "best_for": "Someone who wants {} with a sensible balance of value and fit.".format(base_name.lower()),
             "watch_out": "Confirm recent reviews, real pricing, and availability because these can change quickly.",
             "category": category,
