@@ -1,68 +1,140 @@
-# WhyYouPick - AI Review & Recommendation Agent
+# WhyYouPick
 
-WhyYouPick is a full-stack AI app that simulates how a user would review a product, place, food, movie, or experience, then uses that same persona context to generate personalised recommendations.
+**AI-powered review simulation and personalised recommendation system**
 
-The app is built with a vanilla HTML/CSS/JavaScript frontend and a FastAPI backend deployed as a Vercel Python serverless function.
+WhyYouPick is a production-oriented full-stack AI application that models user preference behaviour, predicts how a user would review an item, and uses that same behavioural profile to generate personalised recommendations across products, food, movies, places, books, electronics, fashion, and other everyday decision categories.
 
-## Overview
+The system combines a FastAPI backend, a mobile-first web experience, a synthetic behavioural dataset, and Groq-hosted LLaMA models accessed through an OpenAI-compatible API. It is designed for lightweight deployment on Vercel while preserving a clear path to persistent storage through MongoDB.
 
-| Task | Endpoint | What it does |
-|---|---|---|
-| Task A - Review Simulation | `POST /api/simulate` | Predicts a rating, review text, confidence, and reasoning for a user/product pair. |
-| Task B - Recommendations | `POST /api/recommend` | Recommends items or ideas based on the user's message, persona, and optional catalogue context. |
+## Product Summary
 
-The backend now treats free-form user input as the source of truth:
+Modern recommendation systems often suggest popular items without explaining how those suggestions fit a specific user's review style, dislikes, strictness, or decision patterns. WhyYouPick addresses that gap by building a reusable user persona model and applying it to two connected tasks:
 
-- In simulation, `item_description` is used first.
-- The catalogue item is only a fallback when the user leaves the description blank.
-- In recommendations, the catalogue is optional context, not a hard restriction.
-- If the user asks for something outside the synthetic catalogue, the agent can use general knowledge and return `source: "general"`.
+| Capability | Description |
+|---|---|
+| Review Simulation | Predicts the rating, review tone, confidence, and reasoning a user would likely give for a product, place, meal, movie, or experience. |
+| Personalised Recommendation | Recommends options based on the user's natural-language request, saved persona, dataset history, and optional catalogue context. |
+| Explainable Reasoning | Returns reasoning signals so the user can understand why an output was produced. |
+| Free-form Input | Supports natural user descriptions instead of forcing every request into a fixed catalogue. |
 
-## Features
+## Competition Value Proposition
 
-- Signup, login, logout, and onboarding preference capture
-- User persona/profile modelling from onboarding and dataset context
-- Free-text review simulation for any category
-- Optional catalogue fallback for simulation
-- Chat-based recommendation agent
-- Custom persona override on simulate and recommend screens
-- Voice output and microphone input in supported browsers
-- Dataset-backed user, item, review, and simulation context
-- Vercel-ready Python serverless deployment
+WhyYouPick is built as a practical AI agent rather than a static demo. The application demonstrates:
 
-## File Structure
+- A complete end-to-end user journey: landing page, authentication, onboarding, modelling, simulation, recommendation, and evaluation screens.
+- A shared persona layer reused across multiple AI tasks.
+- Free-form reasoning over user input with optional dataset grounding.
+- Deployment-ready backend architecture for serverless environments.
+- Clear failure handling when dataset, API, or persistence services are unavailable.
+- Extensible architecture for replacing the synthetic dataset with real user behaviour data.
+
+## Core Workflow
+
+```text
+User Onboarding
+      |
+      v
+Persona + Preference Model
+      |
+      +---------------------------+
+      |                           |
+      v                           v
+Task A: Review Simulation     Task B: Recommendation
+/api/simulate                 /api/recommend
+      |                           |
+      v                           v
+Predicted rating, review,     Ranked suggestions,
+confidence, reasoning         match scores, reasons
+```
+
+Task B builds on the same persona context used in Task A, so recommendations are not generic. They are shaped by user strictness, dealbreakers, preferred categories, tone, historical ratings, and optional custom persona overrides.
+
+## Key Features
+
+### User Modelling
+
+- Onboarding questionnaire for reviewer type, strictness, dealbreakers, category preference, and explanation style.
+- Dataset-backed user profiles from the synthetic review dataset.
+- Signal extraction from review history.
+- Custom persona override for simulation and recommendation tasks.
+
+### Task A - Review Simulation
+
+- Accepts any free-text product or experience description.
+- Uses catalogue metadata only when no description is provided.
+- Generates rating, simulated review, confidence, interpreted item, and reasoning.
+- Avoids static output by grounding the response in the actual typed item.
+
+### Task B - Recommendation Agent
+
+- Chat-based recommendation flow.
+- Responds directly to the user's message instead of forcing catalogue-only picks.
+- Can recommend from catalogue items or general knowledge.
+- Returns ranked items with score, reason, category, image keyword, and source.
+- Supports voice output and microphone input in compatible browsers.
+
+### Reliability and Deployment
+
+- FastAPI backend with Vercel-compatible `app.py` entrypoint.
+- Lazy dataset loading to reduce serverless cold-start risk.
+- Safe fallback responses if Groq or the dataset is unavailable.
+- Groq model fallback strategy for free-tier deployments.
+- Optional MongoDB persistence for production user storage.
+
+## Architecture
+
+```text
+Frontend
+HTML / CSS / JavaScript SPA
+      |
+      | HTTP JSON API
+      v
+Backend
+FastAPI on Vercel Python Serverless
+      |
+      +--> Dataset Layer
+      |    Pandas + OpenPyXL + Excel workbook
+      |
+      +--> AI Layer
+      |    Groq OpenAI-compatible API
+      |
+      +--> User Storage
+           /tmp JSON fallback or MongoDB Atlas
+```
+
+## Repository Structure
 
 ```text
 whyyoupick-v2/
-├── app.py                           # Vercel FastAPI entrypoint and deployed route overrides
-├── main.py                          # Main FastAPI app, local server, dataset logic, auth, AI routes
-├── index.html                       # Main SPA served at /app
-├── landing.html                     # Landing page served at /
-├── app.js                           # Frontend logic reference file
-├── index.css                        # Frontend CSS reference file
-├── requirements.txt                 # Python dependencies
-├── vercel.json                      # Vercel deployment config
-├── render.yaml                      # Optional Render deployment config
-├── whyyoupick_synthetic_dataset.xlsx # Synthetic users/items/reviews dataset
-├── .gitignore                       # Protects secrets and local files
-└── users.json                       # Local-only user store, generated at runtime
+├── app.py                            # Vercel FastAPI entrypoint and deployed route overrides
+├── main.py                           # Main FastAPI application, local server, auth, dataset, AI logic
+├── index.html                        # Mobile-first application UI served at /app
+├── landing.html                      # Public landing page served at /
+├── app.js                            # Frontend logic reference file
+├── index.css                         # Frontend style reference file
+├── requirements.txt                  # Python dependencies
+├── vercel.json                       # Vercel build and routing configuration
+├── render.yaml                       # Optional Render deployment configuration
+├── whyyoupick_synthetic_dataset.xlsx # Synthetic users, items, reviews, and simulation test data
+├── .gitignore                        # Excludes secrets and generated local files
+└── users.json                        # Local-only generated user store, not committed
 ```
 
-## API Endpoints
+## Backend API
 
-| Method | Endpoint | Description |
+| Method | Endpoint | Purpose |
 |---|---|---|
-| `POST` | `/api/signup` | Create a new user account. |
-| `POST` | `/api/login` | Authenticate an existing user. |
-| `POST` | `/api/save_preferences` | Save onboarding preferences/persona. |
+| `POST` | `/api/signup` | Register a user. |
+| `POST` | `/api/login` | Authenticate a user. |
+| `POST` | `/api/save_preferences` | Save onboarding preference data. |
 | `POST` | `/api/extract_signals` | Extract behavioural signals from review history. |
-| `POST` | `/api/simulate` | Generate a predicted review and rating. |
-| `POST` | `/api/recommend` | Generate personalised recommendations. |
-| `GET` | `/api/status` | Health check for dataset, AI key presence, and storage mode. |
+| `POST` | `/api/simulate` | Run Task A review simulation. |
+| `POST` | `/api/recommend` | Run Task B recommendation generation. |
+| `GET` | `/api/status` | Return dataset, AI, and storage health information. |
 | `GET` | `/` | Serve the landing page. |
-| `GET` | `/app` | Serve the web app. |
+| `GET` | `/app` | Serve the main web application. |
 
-### Simulate Request
+### Example: Review Simulation
 
 ```json
 {
@@ -73,9 +145,24 @@ whyyoupick-v2/
 }
 ```
 
-`item_description` is optional, but when provided it takes priority over `item_id`.
+Expected response shape:
 
-### Recommend Request
+```json
+{
+  "rating": 3.8,
+  "review": "The flavour is strong and satisfying, but the pepper level and oiliness may be a bit much for me. I would enjoy it if the portion is fair for the price.",
+  "confidence": "86%",
+  "reasoning": [
+    "Used the typed product description first.",
+    "Matched the user's food preference and value sensitivity.",
+    "Penalised likely oiliness and high spice level."
+  ],
+  "used_catalogue": false,
+  "interpreted_item": "smoky buka jollof rice plate"
+}
+```
+
+### Example: Recommendation
 
 ```json
 {
@@ -85,126 +172,165 @@ whyyoupick-v2/
 }
 ```
 
-The recommendation agent responds to the actual message. It may use catalogue entries when relevant, but it can also make general recommendations outside the dataset.
+Recommendation responses can include catalogue-backed items or general suggestions:
 
-## Local Setup
-
-### Prerequisites
-
-- Python 3.10+
-- A Groq API key from <https://console.groq.com>
-
-### 1. Clone
-
-```bash
-git clone https://github.com/emmanuel-123tech/whyyoupick-v2.git
-cd whyyoupick-v2
+```json
+{
+  "response_text": "For a short Abuja stay, I would prioritise a quiet serviced apartment or budget hotel around Wuse 2, Garki, or Maitama edges, depending on your transport plan.",
+  "items": [
+    {
+      "name": "Quiet serviced apartment near Wuse 2",
+      "item_id": "",
+      "score": "88%",
+      "reason": "Strong fit for a budget-conscious traveller who values quiet, safety, and clean rooms.",
+      "category": "Places",
+      "image_keyword": "serviced apartment Abuja",
+      "source": "general"
+    }
+  ]
+}
 ```
 
-### 2. Install Dependencies
+## Dataset
 
-```bash
-pip install -r requirements.txt
-```
+The application uses `whyyoupick_synthetic_dataset.xlsx`, loaded lazily on first dataset access.
 
-### 3. Configure Environment
+Expected workbook sheets:
 
-Create a `.env` file in the project root:
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
-GROQ_MODEL=llama-3.1-8b-instant
-```
-
-`GROQ_MODEL` is optional, but `llama-3.1-8b-instant` is recommended for free-tier Groq projects because it is cheaper and has friendlier limits than the 70B model.
-
-### 4. Run Locally
-
-```bash
-py main.py
-```
-
-Then open:
-
-| URL | Page |
+| Sheet | Purpose |
 |---|---|
-| `http://localhost:8003` | Landing page |
-| `http://localhost:8003/app` | App |
-| `http://localhost:8003/api/status` | Backend status |
+| `Users` | User personas, tone, rating tendencies, likes, dislikes, and preferred categories. |
+| `Items` | Catalogue items, categories, price levels, descriptions, strengths, and weaknesses. |
+| `Reviews_Train` | Historical review samples used for behavioural signal extraction. |
+| `Simulation_Test` | Test contexts for review simulation evaluation. |
 
-## Vercel Deployment
+The backend remains available even if dataset loading fails. In that case, endpoints return safe fallback responses instead of crashing.
 
-This project uses `app.py` as the Vercel Python entrypoint. `app.py` imports the original FastAPI app from `main.py`, then ensures the deployed `/api/simulate` and `/api/recommend` routes prefer free-form input and register before static file serving.
+## AI Model Strategy
 
-### Environment Variables
+WhyYouPick uses Groq's OpenAI-compatible API for LLaMA model inference.
 
-Set these in the Vercel dashboard:
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
-GROQ_MODEL=llama-3.1-8b-instant
-```
-
-Optional MongoDB persistence:
-
-```env
-MONGODB_URI=your_mongodb_connection_string
-MONGODB_DB=whyyoupick
-```
-
-### Deploy Steps
-
-1. Push changes to GitHub.
-2. Import the repository on Vercel.
-3. Add the environment variables above.
-4. Redeploy after changing any environment variable.
-5. Visit `/api/status` to confirm the backend is responding.
-
-### Important Security Note
-
-Never commit or share API keys. If a key is pasted into chat, committed to git, or exposed in logs, rotate it immediately in the Groq dashboard and update Vercel with the new key.
-
-## Groq Models
-
-The backend tries models in this order:
+The backend attempts models in this order:
 
 1. `GROQ_MODEL`, if configured
 2. `llama-3.3-70b-versatile`
 3. `llama-3.1-8b-instant`
 
-For free-tier usage, set:
+For free-tier Groq projects, the recommended setting is:
 
 ```env
 GROQ_MODEL=llama-3.1-8b-instant
 ```
 
-Groq model references:
+This keeps the app responsive under tighter free-tier rate and token limits while still supporting structured reasoning.
+
+Model references:
 
 - `llama-3.1-8b-instant`: <https://console.groq.com/docs/model/llama-3.1-8b-instant>
 - `llama-3.3-70b-versatile`: <https://console.groq.com/docs/model/llama-3.3-70b-versatile>
 - Rate limits: <https://console.groq.com/docs/rate-limits>
 - Model permissions: <https://console.groq.com/docs/model-permissions>
 
-## Dataset
+## Local Development
 
-The Excel dataset is loaded lazily on first use from:
+### Requirements
 
-```text
-whyyoupick_synthetic_dataset.xlsx
+- Python 3.10+
+- Groq API key
+- Optional MongoDB Atlas cluster for persistent production-style storage
+
+### Setup
+
+```bash
+git clone https://github.com/emmanuel-123tech/whyyoupick-v2.git
+cd whyyoupick-v2
+pip install -r requirements.txt
 ```
 
-Expected sheets:
+Create `.env`:
 
-- `Users`
-- `Items`
-- `Reviews_Train`
-- `Simulation_Test`
+```env
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.1-8b-instant
 
-If the dataset cannot load, the API stays online and returns safe fallback responses.
+# Optional persistence
+MONGODB_URI=your_mongodb_connection_string
+MONGODB_DB=whyyoupick
+```
 
-## Persistence Notes
+Run locally:
 
-Without MongoDB, Vercel stores user data in `/tmp/users.json`. This is temporary serverless storage and can reset on cold starts. Use MongoDB Atlas or another database for real persistence.
+```bash
+py main.py
+```
+
+Local URLs:
+
+| URL | Description |
+|---|---|
+| `http://localhost:8003` | Landing page |
+| `http://localhost:8003/app` | Main app |
+| `http://localhost:8003/api/status` | Backend health check |
+
+## Production Deployment
+
+### Vercel
+
+The project is configured for Vercel Python serverless deployment.
+
+`vercel.json` routes all traffic to `app.py`. The `app.py` entrypoint imports the app from `main.py`, patches the deployed AI routes, and ensures API routes are registered before static file serving.
+
+Required Vercel environment variables:
+
+```env
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.1-8b-instant
+```
+
+Recommended production persistence:
+
+```env
+MONGODB_URI=your_mongodb_connection_string
+MONGODB_DB=whyyoupick
+```
+
+Deployment checklist:
+
+1. Push the latest code to GitHub.
+2. Import the repository into Vercel.
+3. Add environment variables in the Vercel dashboard.
+4. Redeploy after any environment variable change.
+5. Visit `/api/status` to confirm the backend is running.
+6. Test `/api/simulate` with a free-form item description.
+7. Test `/api/recommend` with an out-of-catalogue natural-language request.
+
+## Security Notes
+
+- Do not commit `.env`, API keys, MongoDB credentials, or generated user data.
+- If an API key is pasted into chat, committed, or exposed in logs, rotate it immediately.
+- Store production secrets only in Vercel environment variables or another secret manager.
+- `users.json` is for local fallback only and should not be used as durable production storage.
+
+## Persistence Strategy
+
+| Mode | Storage | Suitable for |
+|---|---|---|
+| Local fallback | `users.json` | Local demos and development only. |
+| Vercel fallback | `/tmp/users.json` | Temporary serverless sessions; resets on cold starts. |
+| MongoDB | MongoDB Atlas collection | Production-style user persistence. |
+
+For competition demos, MongoDB is recommended if judges will create accounts and return later.
+
+## Evaluation Context
+
+The application includes an Evaluation Lab screen with placeholder metrics for Task A and Task B. These metrics are intended to communicate the evaluation framework:
+
+| Task | Example Metrics |
+|---|---|
+| Task A - Simulation | MAE, RMSE, tone fidelity, sentiment match, human behavioural fidelity. |
+| Task B - Recommendation | Precision@K, Recall@K, NDCG@K, MRR, cold-start handling, cross-domain support. |
+
+Future production evaluation should compute these metrics directly from held-out test data and human review panels.
 
 ## Tech Stack
 
@@ -212,14 +338,27 @@ Without MongoDB, Vercel stores user data in `/tmp/users.json`. This is temporary
 |---|---|
 | Frontend | HTML, CSS, JavaScript |
 | Backend | Python, FastAPI, Uvicorn |
-| AI | Groq OpenAI-compatible API |
-| Dataset | Pandas, OpenPyXL, Excel |
+| AI Inference | Groq OpenAI-compatible API |
+| Models | LLaMA 3.1 / 3.3 family |
+| Dataset | Excel, Pandas, OpenPyXL |
 | Deployment | Vercel Python Serverless |
-| Optional DB | MongoDB Atlas |
+| Optional Database | MongoDB Atlas |
+| Icons | Phosphor Icons |
+
+## Roadmap
+
+- Replace synthetic data with real user review imports.
+- Add admin dataset upload and validation.
+- Persist full interaction history in MongoDB.
+- Add automated evaluation scripts for Task A and Task B metrics.
+- Add observability for model failures, latency, and rate-limit events.
+- Expand recommendation sources beyond the local catalogue.
 
 ## Team
 
-Built by AgentX.
+Built by **AgentX**.
 
-- Emmanuel Ebiendele - ML Engineer, Web Developer
-- Olawale Marvellous - UI/UX Designer
+| Name | Role |
+|---|---|
+| Emmanuel Ebiendele | ML Engineer, Web Developer |
+| Olawale Marvellous | UI/UX Designer |
