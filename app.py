@@ -60,6 +60,25 @@ def _keyword_name(message: str) -> str:
     return " ".join(words[:5]).title() or "Personalised Pick"
 
 
+def _image_url(keyword: str) -> str:
+    clean = re.sub(r"[^a-zA-Z0-9\s-]", " ", keyword or "product").strip() or "product"
+    query = "+".join(clean.split()[:6])
+    return "https://loremflickr.com/320/220/{}?lock={}".format(query, abs(hash(clean)) % 10000)
+
+
+def _detect_language(message: str) -> str:
+    msg = " {} ".format(message.lower())
+    if any(word in msg for word in [" bawo ", " se ", " jare ", " e jowo ", " mo fe ", " nkan ", " ounje ", " owo "]):
+        return "Yoruba"
+    if any(word in msg for word in [" kedu ", " biko ", " achoro ", " ezigbo ", " nri ", " ego ", " maka "]):
+        return "Igbo"
+    if any(word in msg for word in [" sannu ", " ina ", " don Allah ", " abinci ", " kudi ", " lafiya ", " gida "]):
+        return "Hausa"
+    if any(word in msg for word in [" abeg ", " make ", " wetin ", " sabi ", " dey ", " no too ", " wahala ", " na "]):
+        return "Nigerian Pidgin"
+    return "English"
+
+
 def _parse_json_response(text: str) -> dict:
     text = (text or "").strip()
     if not text:
@@ -176,6 +195,7 @@ def simulate_review(req: backend.SimulateRequest):
 @app.post("/api/recommend")
 def recommend_items(req: backend.RecommendRequest):
     message = req.message.strip()
+    language = _detect_language(message)
     user_prefs = req.custom_persona.strip() or backend.get_user_preferences(req.user_id)
     category = _infer_category(message)
     catalog = backend.get_catalog_items(category if category != "General" else None, n=8)
@@ -196,22 +216,30 @@ def recommend_items(req: backend.RecommendRequest):
 
     if backend.client:
         prompt = (
-            "You are WhyYouPick's intelligent recommendation agent.\n{}\n\n"
+            "You are WhyYouPick's intelligent Nigerian recommendation agent.\n{}\n\n"
             "User message: {}\n\n"
+            "Detected reply language: {}. Reply naturally in this language. If the user mixes languages, you may code-switch in the same style. "
+            "Supported languages: English, Yoruba, Igbo, Hausa, and Nigerian Pidgin.\n\n"
             "Relevant catalogue context, if useful:\n{}\n\n"
             "Respond to exactly what the user asked. If the catalogue is relevant, you may use catalogue items. "
             "If the user's request is outside or more specific than the catalogue, use general knowledge and say so naturally. "
             "Do not force the answer into the catalogue and do not recommend unrelated default items. "
-            "Think about constraints, intent, tradeoffs, persona fit, budget/value, and likely dealbreakers.\n\n"
-            "Return valid JSON only: response_text (direct helpful answer, 2-4 sentences), "
-            "items (array of 0-5 objects with name, item_id, score, reason, category, image_keyword, source). "
+            "Give detailed recommendation reviews, not one-line reasons. Each item should explain why it fits, what tradeoff to watch, and who it is best for. "
+            "Use concrete Nigerian context when helpful, but do not invent exact prices or business claims as facts.\n\n"
+            "Return valid JSON only with: language (string), response_text (friendly conversational answer, 3-5 sentences), "
+            "items (array of 3-5 objects with: name, item_id, score, reason, detailed_review, best_for, watch_out, category, image_keyword, image_url, source). "
+            "The visible UI currently shows the reason field, so reason must be a detailed 2-3 sentence mini-review, not a short phrase. "
             "Use item_id only for catalogue items; for general suggestions use an empty item_id and source='general'."
-        ).format(persona_note, message, catalog_text)
+        ).format(persona_note, message, language, catalog_text)
         try:
-            result = _chat_json(prompt, "Return valid JSON only. Be useful, specific, and faithful to the user's message.")
+            result = _chat_json(prompt, "Return valid JSON only. Be useful, specific, multilingual, and faithful to the user's message.")
+            result.setdefault("language", language)
             catalog_map = {item.get("item_id", ""): item for item in catalog}
             for item in result.get("items", []):
                 catalog_item = catalog_map.get(item.get("item_id", ""), {})
+                keyword = item.get("image_keyword") or item.get("name") or category
+                item.setdefault("image_keyword", keyword)
+                item.setdefault("image_url", _image_url(keyword))
                 if catalog_item:
                     item.setdefault("category", catalog_item.get("category", ""))
                     item.setdefault("price_level", catalog_item.get("price_level", ""))
@@ -221,33 +249,53 @@ def recommend_items(req: backend.RecommendRequest):
                     item.setdefault("item_id", "")
                     item.setdefault("category", category)
                     item.setdefault("source", "general")
+                item.setdefault("detailed_review", item.get("reason", ""))
+                item.setdefault("best_for", "Users who want a strong fit for this request.")
+                item.setdefault("watch_out", "Check current availability, quality, and price before deciding.")
+                if len(str(item.get("reason", ""))) < 120 and item.get("detailed_review"):
+                    item["reason"] = item["detailed_review"]
             return result
         except Exception as exc:
             print("recommend override error: {}".format(exc))
 
+    return _recommend_fallback(message, category, language)
+
+
+def _recommend_fallback(message: str, category: str, language: str) -> dict:
     base_name = _keyword_name(message)
+    intro_by_language = {
+        "Yoruba": "Mo ye ohun ti o n wa. Eyi ni awon aba ti o ba ibeere naa mu, pelu idi, ohun ti o dara fun, ati ohun ti o ye ki o sayewo.",
+        "Igbo": "Aghotara m ihe ichoro. Lee aro ndi dabara na mkpa gi, tinyere uru ha na ihe i kwesiri ilebara anya.",
+        "Hausa": "Na fahimci abin da kake nema. Ga wasu shawarwari masu amfani tare da dalili da abin lura kafin ka zaba.",
+        "Nigerian Pidgin": "I understand wetin you dey find. See better options wey match your request, plus why e make sense and wetin you suppose check before you choose.",
+        "English": "I understand what you are looking for. Here are detailed options based on your request, with why each one fits and what to check before deciding.",
+    }
+    templates = [
+        ("Best-value {}".format(base_name), "This is the practical first pick because it focuses on the exact need you described while balancing value and usefulness."),
+        ("Reliable {} option".format(base_name), "This is the safer choice if consistency, fewer surprises, and dependable quality matter more than flashy extras."),
+        ("Premium-leaning {}".format(base_name), "This fits when you want a more comfortable or higher-quality experience, but it may cost more than the basic option."),
+    ]
+    items = []
+    for idx, (name, review) in enumerate(templates):
+        keyword = "{} {}".format(base_name, category).strip().lower()
+        detailed_review = "{} It matches the user's request for '{}'. I would compare current reviews, distance or availability, and total cost before making the final decision.".format(review, message)
+        items.append({
+            "name": name,
+            "item_id": "",
+            "score": "{}%".format(88 - idx * 5),
+            "reason": detailed_review,
+            "detailed_review": detailed_review,
+            "best_for": "Someone who wants {} with a sensible balance of value and fit.".format(base_name.lower()),
+            "watch_out": "Confirm recent reviews, real pricing, and availability because these can change quickly.",
+            "category": category,
+            "image_keyword": keyword,
+            "image_url": _image_url(keyword),
+            "source": "general",
+        })
     return {
-        "response_text": "I read your request as: {}. Here are flexible suggestions based on that message rather than forcing the default catalogue.".format(message),
-        "items": [
-            {
-                "name": "Best-value {}".format(base_name),
-                "item_id": "",
-                "score": "86%",
-                "reason": "Prioritises the exact need you described and balances quality with value.",
-                "category": category,
-                "image_keyword": base_name.lower(),
-                "source": "general",
-            },
-            {
-                "name": "Reliable {} option".format(base_name),
-                "item_id": "",
-                "score": "80%",
-                "reason": "A safer pick when durability and fewer compromises matter more than flashy extras.",
-                "category": category,
-                "image_keyword": base_name.lower(),
-                "source": "general",
-            },
-        ],
+        "language": language,
+        "response_text": intro_by_language.get(language, intro_by_language["English"]),
+        "items": items,
     }
 
 
