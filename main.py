@@ -16,15 +16,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Password hashing (pure stdlib — no native compilation needed on Vercel) ───
+# ── Password hashing (pure stdlib — works on Vercel, no C compilation) ────────
 def hash_password(plain: str) -> str:
-    """PBKDF2-SHA256 password hashing using stdlib only."""
     salt = secrets.token_hex(16)
     dk = hashlib.pbkdf2_hmac("sha256", plain.encode(), salt.encode(), 260_000)
     return "pbkdf2:{}:{}".format(salt, base64.b64encode(dk).decode())
 
 def verify_password(plain: str, hashed: str) -> bool:
-    """Verify against pbkdf2 hash OR legacy plain-text (migration support)."""
     if hashed.startswith("pbkdf2:"):
         try:
             _, salt, stored_b64 = hashed.split(":", 2)
@@ -32,10 +30,9 @@ def verify_password(plain: str, hashed: str) -> bool:
             return base64.b64encode(dk).decode() == stored_b64
         except Exception:
             return False
-    # Legacy plain-text fallback for accounts created before hashing was added
-    return plain == hashed
+    return plain == hashed  # legacy plain-text fallback
 
-# ── MongoDB Atlas ─────────────────────────────────────────────────────────────
+# ── MongoDB ───────────────────────────────────────────────────────────────────
 USE_MONGO = False
 _users_col = None
 
@@ -48,21 +45,14 @@ try:
         _users_col = _mongo_db["users"]
         _users_col.create_index("email", unique=True)
         USE_MONGO = True
-        print("[OK] MongoDB Atlas connected.")
-    else:
-        print("[INFO] MONGODB_URI not set - falling back to local file storage.")
-except Exception as _mongo_err:
+except Exception as _e:
     USE_MONGO = False
-    print("[WARN] MongoDB unavailable: {} - falling back to local file storage.".format(_mongo_err))
 
-# Absolute path of this file's directory — required for Vercel serverless
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# ── File-based fallback ───────────────────────────────────────────────────────
 USERS_FILE = "/tmp/users.json" if os.environ.get("VERCEL") else os.path.join(BASE_DIR, "users.json")
+DATASET_PATH = os.path.join(BASE_DIR, "whyyoupick_synthetic_dataset.xlsx")
 
 app = FastAPI(title="WhyYouPick API")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -71,85 +61,94 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Groq AI Client ────────────────────────────────────────────────────────────
+# ── Groq AI client ────────────────────────────────────────────────────────────
 _raw_key = os.getenv("GROQ_API_KEY", "").strip()
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=_raw_key
-) if _raw_key and _raw_key != "your_groq_api_key_here" else None
+) if _raw_key and _raw_key not in ("", "your_groq_api_key_here") else None
 
-if client:
-    print("[OK] Groq AI client initialized.")
-else:
-    print("[WARN] Groq API key missing or invalid - AI features will use fallback responses.")
+# ── LAZY dataset loading — loaded once on first use, NOT at import time ───────
+_ds: Dict[str, pd.DataFrame] = {}
 
-# ── Load Dataset Sheets ───────────────────────────────────────────────────────
-DATASET_PATH = os.path.join(BASE_DIR, "whyyoupick_synthetic_dataset.xlsx")
-dataset_loaded = False
-df_users = pd.DataFrame()
-df_items = pd.DataFrame()
-df_reviews = pd.DataFrame()
-df_sim = pd.DataFrame()
+def _load_dataset() -> Dict[str, pd.DataFrame]:
+    global _ds
+    if _ds:
+        return _ds
+    try:
+        _ds["users"]   = pd.read_excel(DATASET_PATH, sheet_name="Users")
+        _ds["items"]   = pd.read_excel(DATASET_PATH, sheet_name="Items")
+        _ds["reviews"] = pd.read_excel(DATASET_PATH, sheet_name="Reviews_Train")
+        _ds["sim"]     = pd.read_excel(DATASET_PATH, sheet_name="Simulation_Test")
+    except Exception as e:
+        print("Dataset load error: {}".format(e))
+    return _ds
 
-try:
-    df_users  = pd.read_excel(DATASET_PATH, sheet_name="Users")
-    df_items  = pd.read_excel(DATASET_PATH, sheet_name="Items")
-    df_reviews = pd.read_excel(DATASET_PATH, sheet_name="Reviews_Train")
-    df_sim    = pd.read_excel(DATASET_PATH, sheet_name="Simulation_Test")
-    dataset_loaded = True
-    print("[OK] Dataset loaded - {} items, {} reviews, {} users.".format(
-        len(df_items), len(df_reviews), len(df_users)
-    ))
-except Exception as e:
-    print("[WARN] Could not load dataset: {}".format(e))
+def _items() -> pd.DataFrame:
+    return _load_dataset().get("items", pd.DataFrame())
 
-# ── Category keyword map for query detection ──────────────────────────────────
-CATEGORY_KEYWORDS: Dict[str, List[str]] = {
-    "Movies":        ["movie", "film", "cinema", "thriller", "action", "comedy", "drama", "watch", "series", "show"],
-    "Food":          ["food", "eat", "snack", "drink", "restaurant", "meal", "dish", "cuisine", "burger", "pizza", "rice", "jollof"],
-    "Electronics":   ["phone", "laptop", "gadget", "electronic", "device", "computer", "headphone", "speaker", "camera", "tv"],
-    "Fashion":       ["cloth", "fashion", "wear", "bag", "shoe", "dress", "outfit", "style", "accessory", "backpack"],
-    "Books":         ["book", "read", "novel", "guide", "textbook", "literature", "author", "study", "story"],
-    "Places":        ["place", "visit", "travel", "hotel", "location", "spot", "destination", "trip"],
-    "Home Tools":    ["home", "tool", "kitchen", "furniture", "appliance", "cleaning", "decor", "household"],
-    "School Supplies": ["school", "supply", "pen", "pencil", "notebook", "stationery", "study"],
+def _reviews() -> pd.DataFrame:
+    return _load_dataset().get("reviews", pd.DataFrame())
+
+def _users_ds() -> pd.DataFrame:
+    return _load_dataset().get("users", pd.DataFrame())
+
+def _sim() -> pd.DataFrame:
+    return _load_dataset().get("sim", pd.DataFrame())
+
+# ── Category keywords ─────────────────────────────────────────────────────────
+CATEGORY_KEYWORDS = {
+    "Movies":         ["movie", "film", "cinema", "thriller", "action", "comedy", "drama", "watch", "series", "show"],
+    "Food":           ["food", "eat", "snack", "drink", "restaurant", "meal", "dish", "cuisine", "burger", "pizza", "rice", "jollof"],
+    "Electronics":    ["phone", "laptop", "gadget", "electronic", "device", "computer", "headphone", "speaker", "camera", "tv"],
+    "Fashion":        ["cloth", "fashion", "wear", "bag", "shoe", "dress", "outfit", "style", "accessory", "backpack"],
+    "Books":          ["book", "read", "novel", "guide", "textbook", "literature", "author", "study", "story"],
+    "Places":         ["place", "visit", "travel", "hotel", "location", "spot", "destination", "trip"],
+    "Home Tools":     ["home", "tool", "kitchen", "furniture", "appliance", "cleaning", "decor", "household"],
+    "School Supplies":["school", "supply", "pen", "pencil", "notebook", "stationery"],
 }
 
 def detect_category(message: str) -> Optional[str]:
-    msg_lower = message.lower()
+    msg = message.lower()
     best_cat, best_hits = None, 0
-    for cat, keywords in CATEGORY_KEYWORDS.items():
-        hits = sum(1 for kw in keywords if kw in msg_lower)
+    for cat, kws in CATEGORY_KEYWORDS.items():
+        hits = sum(1 for kw in kws if kw in msg)
         if hits > best_hits:
             best_hits, best_cat = hits, cat
     return best_cat if best_hits > 0 else None
 
 def get_catalog_items(category: Optional[str], n: int = 12) -> List[dict]:
-    if df_items.empty:
+    df = _items()
+    if df.empty:
         return []
-    pool = df_items if not category else df_items[df_items["category"] == category]
+    pool = df if not category else df[df["category"] == category]
     if pool.empty:
-        pool = df_items
-    sample = pool.sample(min(n, len(pool)), random_state=42)
-    return sample[["item_id", "title", "category", "price_level", "description",
-                    "strengths", "weaknesses", "base_quality_score", "popularity_score"]].to_dict(orient="records")
+        pool = df
+    sample = pool.head(n)   # head() instead of sample() — no numpy randomness needed
+    cols = ["item_id", "title", "category", "price_level",
+            "description", "strengths", "weaknesses",
+            "base_quality_score", "popularity_score"]
+    return sample[[c for c in cols if c in sample.columns]].to_dict(orient="records")
 
 def get_dataset_user_profile(user_id: str) -> Optional[dict]:
-    if df_users.empty:
+    df = _users_ds()
+    if df.empty:
         return None
-    mask = df_users["user_id"].astype(str).str.upper() == user_id.upper()
+    mask = df["user_id"].astype(str).str.upper() == user_id.upper()
     if not mask.any():
         return None
-    return df_users[mask].iloc[0].to_dict()
+    return df[mask].iloc[0].to_dict()
 
 def get_user_reviews(user_id: str, n: int = 20) -> List[dict]:
-    if df_reviews.empty:
+    df = _reviews()
+    if df.empty:
         return []
-    mask = df_reviews["user_id"].astype(str).str.upper() == user_id.upper()
-    rows = df_reviews[mask].head(n)
-    return rows[["item_id", "rating", "review_text", "sentiment", "tone_label"]].to_dict(orient="records")
+    mask = df["user_id"].astype(str).str.upper() == user_id.upper()
+    rows = df[mask].head(n)
+    cols = ["item_id", "rating", "review_text", "sentiment", "tone_label"]
+    return rows[[c for c in cols if c in rows.columns]].to_dict(orient="records")
 
-# ── Request Models ────────────────────────────────────────────────────────────
+# ── Request models ────────────────────────────────────────────────────────────
 class ExtractRequest(BaseModel):
     user_id: str
 
@@ -177,14 +176,14 @@ class PreferenceRequest(BaseModel):
     shopping_category: str
     explanation_length: str
 
-# ── In-memory + file fallback ─────────────────────────────────────────────────
+# ── File-based user store ─────────────────────────────────────────────────────
 users_db: dict = {}
 if not USE_MONGO and os.path.exists(USERS_FILE):
     try:
         with open(USERS_FILE, "r") as f:
             users_db = json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
-        print("[WARN] Could not load users file: {}".format(e))
+    except Exception:
+        pass
 
 def save_users():
     if USE_MONGO:
@@ -192,8 +191,8 @@ def save_users():
     try:
         with open(USERS_FILE, "w") as f:
             json.dump(users_db, f)
-    except Exception as e:
-        print("[WARN] Could not save users file: {}".format(e))
+    except Exception:
+        pass
 
 # ── MongoDB helpers ───────────────────────────────────────────────────────────
 def mongo_get_user(email: str) -> Optional[dict]:
@@ -206,22 +205,21 @@ def mongo_upsert_user(email: str, data: dict):
         return
     _users_col.update_one({"email": email}, {"$set": {**data, "email": email}}, upsert=True)
 
-# ── Auth endpoints ────────────────────────────────────────────────────────────
+# ── Auth ──────────────────────────────────────────────────────────────────────
 @app.post("/api/signup")
 def signup(req: AuthRequest):
     if USE_MONGO:
         if mongo_get_user(req.email):
             raise HTTPException(status_code=400, detail="User already exists")
-        user_count = _users_col.count_documents({})
-        new_user = {"name": req.name, "password": hash_password(req.password), "id": "User_{}".format(user_count + 1)}
-        mongo_upsert_user(req.email, new_user)
-        return {"message": "Signup successful", "user_id": new_user["id"], "name": req.name}
-    else:
-        if req.email in users_db:
-            raise HTTPException(status_code=400, detail="User already exists")
-        users_db[req.email] = {"name": req.name, "password": hash_password(req.password), "id": "User_{}".format(len(users_db) + 1)}
-        save_users()
-        return {"message": "Signup successful", "user_id": users_db[req.email]["id"], "name": req.name}
+        uid = "User_{}".format(_users_col.count_documents({}) + 1)
+        mongo_upsert_user(req.email, {"name": req.name, "password": hash_password(req.password), "id": uid})
+        return {"message": "Signup successful", "user_id": uid, "name": req.name}
+    if req.email in users_db:
+        raise HTTPException(status_code=400, detail="User already exists")
+    uid = "User_{}".format(len(users_db) + 1)
+    users_db[req.email] = {"name": req.name, "password": hash_password(req.password), "id": uid}
+    save_users()
+    return {"message": "Signup successful", "user_id": uid, "name": req.name}
 
 @app.post("/api/login")
 def login(req: AuthRequest):
@@ -230,23 +228,17 @@ def login(req: AuthRequest):
         if not user or not verify_password(req.password, user["password"]):
             raise HTTPException(status_code=401, detail="Invalid credentials")
         return {"message": "Login successful", "user_id": user["id"], "email": req.email, "name": user["name"]}
-    else:
-        if req.email not in users_db:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-        stored = users_db[req.email]
-        if not verify_password(req.password, stored["password"]):
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-        return {"message": "Login successful", "user_id": stored["id"], "email": req.email, "name": stored["name"]}
+    if req.email not in users_db:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    stored = users_db[req.email]
+    if not verify_password(req.password, stored["password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return {"message": "Login successful", "user_id": stored["id"], "email": req.email, "name": stored["name"]}
 
 @app.post("/api/save_preferences")
 def save_preferences(req: PreferenceRequest):
-    prefs = {
-        "reviewer_type": req.reviewer_type,
-        "strictness": req.strictness,
-        "dealbreaker": req.dealbreaker,
-        "shopping_category": req.shopping_category,
-        "explanation_length": req.explanation_length,
-    }
+    prefs = {k: getattr(req, k) for k in
+             ["reviewer_type", "strictness", "dealbreaker", "shopping_category", "explanation_length"]}
     if USE_MONGO:
         user = mongo_get_user(req.email)
         if not user:
@@ -261,64 +253,48 @@ def save_preferences(req: PreferenceRequest):
 
 @app.get("/api/status")
 def get_status():
+    items = _items()
+    reviews = _reviews()
     return {
-        "dataset_loaded": dataset_loaded,
-        "items": len(df_items),
-        "reviews": len(df_reviews),
-        "users": len(df_users),
+        "dataset_loaded": not items.empty,
+        "items": len(items),
+        "reviews": len(reviews),
         "ai_connected": client is not None,
         "storage": "MongoDB" if USE_MONGO else "Local File",
     }
 
-# ── User preference string builder ───────────────────────────────────────────
+# ── User preference builder ───────────────────────────────────────────────────
 def get_user_preferences(user_id: str) -> str:
     parts = []
-
-    # 1. Saved app preferences
-    saved_prefs = None
+    saved = None
     if USE_MONGO and _users_col is not None:
         try:
             doc = _users_col.find_one({"id": user_id}, {"_id": 0})
-            if doc and "preferences" in doc:
-                saved_prefs = doc["preferences"]
-        except Exception as e:
-            print("[WARN] MongoDB preference lookup: {}".format(e))
+            if doc:
+                saved = doc.get("preferences")
+        except Exception:
+            pass
     else:
         for u in users_db.values():
-            if u.get("id") == user_id and "preferences" in u:
-                saved_prefs = u["preferences"]
+            if u.get("id") == user_id:
+                saved = u.get("preferences")
                 break
-
-    if saved_prefs:
+    if saved:
         parts.append(
             "App Profile - Reviewer type: {}. Strictness: {}. Dealbreaker: {}. "
             "Favourite category: {}. Detail preference: {}.".format(
-                saved_prefs.get("reviewer_type", "balanced"),
-                saved_prefs.get("strictness", "moderate"),
-                saved_prefs.get("dealbreaker", "none"),
-                saved_prefs.get("shopping_category", "general"),
-                saved_prefs.get("explanation_length", "medium"),
-            )
-        )
-
-    # 2. Dataset profile
-    ds_profile = get_dataset_user_profile(user_id)
-    if ds_profile:
+                saved.get("reviewer_type", "balanced"), saved.get("strictness", "moderate"),
+                saved.get("dealbreaker", "none"), saved.get("shopping_category", "general"),
+                saved.get("explanation_length", "medium")))
+    ds = get_dataset_user_profile(user_id)
+    if ds:
         parts.append(
-            "Dataset Profile - Persona: {}. Language mix: {}. Review tone: {}. "
-            "Rating strictness: {}. Avg rating tendency: {}. "
-            "Likes: {}. Dislikes: {}. Preferred categories: {}.".format(
-                ds_profile.get("persona", "general"),
-                ds_profile.get("primary_language_mix", "english"),
-                ds_profile.get("review_tone", "balanced"),
-                ds_profile.get("rating_strictness", "moderate"),
-                ds_profile.get("avg_rating_tendency", 3.5),
-                ds_profile.get("likes", "N/A"),
-                ds_profile.get("dislikes", "N/A"),
-                ds_profile.get("preferred_categories", "general"),
-            )
-        )
-
+            "Dataset Profile - Persona: {}. Language mix: {}. Tone: {}. "
+            "Strictness: {}. Avg rating: {}. Likes: {}. Dislikes: {}. Categories: {}.".format(
+                ds.get("persona", "general"), ds.get("primary_language_mix", "english"),
+                ds.get("review_tone", "balanced"), ds.get("rating_strictness", "moderate"),
+                ds.get("avg_rating_tendency", 3.5), ds.get("likes", "N/A"),
+                ds.get("dislikes", "N/A"), ds.get("preferred_categories", "general")))
     return "\n".join(parts) if parts else "None"
 
 # ── Task A: Extract Signals ───────────────────────────────────────────────────
@@ -327,228 +303,170 @@ def extract_signals(req: ExtractRequest):
     ds_profile = get_dataset_user_profile(req.user_id)
     user_reviews = get_user_reviews(req.user_id)
 
-    if not user_reviews and not df_reviews.empty:
-        num_part = re.sub(r"[^0-9]", "", req.user_id)
-        if num_part:
-            mask = df_reviews["user_id"].astype(str).str.contains(num_part, na=False)
-            rows = df_reviews[mask].head(20)
-            user_reviews = rows[["item_id", "rating", "review_text", "sentiment", "tone_label"]].to_dict(orient="records")
+    if not user_reviews:
+        df = _reviews()
+        if not df.empty:
+            num = re.sub(r"[^0-9]", "", req.user_id)
+            if num:
+                rows = df[df["user_id"].astype(str).str.contains(num, na=False)].head(20)
+                user_reviews = rows[["item_id", "rating", "review_text"]].to_dict(orient="records")
 
     if client and (user_reviews or ds_profile):
         try:
             review_sample = "\n".join(
-                "- [{}/5 | {} | {}] {}".format(
-                    r.get("rating", "-"), r.get("sentiment", ""), r.get("tone_label", ""), r.get("review_text", "")
-                )
-                for r in user_reviews[:15]
-            )
+                "- [{}/5] {}".format(r.get("rating", "-"), r.get("review_text", ""))
+                for r in user_reviews[:15])
             profile_text = ""
             if ds_profile:
-                profile_text = (
-                    "persona={}, tone={}, strictness={}, avg_rating={}, "
-                    "likes={}, dislikes={}, preferred_categories={}".format(
-                        ds_profile.get("persona"), ds_profile.get("review_tone"),
-                        ds_profile.get("rating_strictness"), ds_profile.get("avg_rating_tendency"),
-                        ds_profile.get("likes"), ds_profile.get("dislikes"),
-                        ds_profile.get("preferred_categories"),
-                    )
-                )
-
-            avg_rating = None
+                profile_text = "persona={}, tone={}, strictness={}, avg={}, likes={}, dislikes={}".format(
+                    ds_profile.get("persona"), ds_profile.get("review_tone"),
+                    ds_profile.get("rating_strictness"), ds_profile.get("avg_rating_tendency"),
+                    ds_profile.get("likes"), ds_profile.get("dislikes"))
+            avg = None
             if user_reviews:
-                avg_rating = round(sum(r.get("rating", 0) for r in user_reviews) / len(user_reviews), 2)
-            if ds_profile and ds_profile.get("avg_rating_tendency") and avg_rating is None:
-                avg_rating = float(ds_profile["avg_rating_tendency"])
-
-            profile_line  = "Profile: {}".format(profile_text) if profile_text else ""
-            reviews_line  = "Recent reviews:\n{}".format(review_sample) if review_sample else "No reviews available."
+                ratings = [r.get("rating", 0) for r in user_reviews if r.get("rating")]
+                avg = round(sum(ratings) / len(ratings), 2) if ratings else None
+            if not avg and ds_profile:
+                avg = ds_profile.get("avg_rating_tendency")
 
             prompt = (
-                "Analyse user {}'s behaviour from their profile and reviews.\n\n"
-                "{}\n{}\n\n"
-                "Return a JSON object with:\n"
-                "  'signals'    (array of 6 concise behavioural signal strings),\n"
-                "  'avg_rating' (float - computed average rating or {}),\n"
-                "  'tone'       (one word describing their writing style),\n"
-                "  'biases'     (array of up to 3 bias strings e.g. 'Negative Bias: Battery Life')."
-            ).format(req.user_id, profile_line, reviews_line, avg_rating)
-
+                "Analyse user {} reviews.\nProfile: {}\nReviews:\n{}\n\n"
+                "Return JSON: signals (6 strings), avg_rating ({}), tone (1 word), biases (3 strings)."
+            ).format(req.user_id, profile_text, review_sample, avg)
             resp = client.chat.completions.create(
                 model="llama3-70b-8192",
                 messages=[
-                    {"role": "system", "content": "You are a user-behaviour analysis AI. Always output valid JSON only."},
-                    {"role": "user",   "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-            )
+                    {"role": "system", "content": "Behaviour analysis AI. Output valid JSON only."},
+                    {"role": "user", "content": prompt}],
+                response_format={"type": "json_object"})
             result = json.loads(resp.choices[0].message.content)
-            if avg_rating is not None and result.get("avg_rating") is None:
-                result["avg_rating"] = avg_rating
+            if avg and not result.get("avg_rating"):
+                result["avg_rating"] = avg
             return result
         except Exception as e:
-            print("[WARN] extract_signals AI error: {}".format(e))
+            print("extract_signals error: {}".format(e))
 
-    # Fallback
     return {
         "signals": ["Strict Rater", "Concise Tone", "Negative Bias: Price", "Values Durability",
                     "Positive Bias: Build Quality", "Category Focus: Electronics"],
-        "avg_rating": 3.2,
-        "tone": "critical",
-        "biases": ["Negative Bias: Price", "Negative Bias: Battery Life", "Positive Bias: Durability"],
-    }
+        "avg_rating": 3.2, "tone": "critical",
+        "biases": ["Negative Bias: Price", "Negative Bias: Battery Life", "Positive Bias: Durability"]}
 
-# ── Task A: Simulate Review ───────────────────────────────────────────────────
+# ── Task A: Simulate ──────────────────────────────────────────────────────────
 @app.post("/api/simulate")
 def simulate_review(req: SimulateRequest):
     if client:
-        user_prefs = req.custom_persona.strip() if req.custom_persona.strip() else get_user_preferences(req.user_id)
+        user_prefs = req.custom_persona.strip() or get_user_preferences(req.user_id)
+        item_ctx = req.item_description.strip()
+        if not item_ctx:
+            df = _items()
+            if not df.empty:
+                mask = df["item_id"].astype(str).str.upper() == req.item_id.upper()
+                if mask.any():
+                    r = df[mask].iloc[0]
+                    item_ctx = "{} ({}, {}). {}\nStrengths: {}\nWeaknesses: {}".format(
+                        r.get("title"), r.get("category"), r.get("price_level"),
+                        r.get("description"), r.get("strengths"), r.get("weaknesses"))
+        if not item_ctx:
+            df = _sim()
+            if not df.empty:
+                m = (df["user_id"].astype(str).str.upper() == req.user_id.upper()) & \
+                    (df["item_id"].astype(str).str.upper() == req.item_id.upper())
+                if m.any():
+                    item_ctx = str(df[m].iloc[0].get("item_context", req.item_id))
+        if not item_ctx:
+            item_ctx = req.item_id
 
-        # Resolve item context from dataset
-        item_context = req.item_description.strip()
-        if not item_context and not df_items.empty:
-            mask = df_items["item_id"].astype(str).str.upper() == req.item_id.upper()
-            if mask.any():
-                row = df_items[mask].iloc[0]
-                item_context = (
-                    "{} ({}, {}). Description: {}. Strengths: {}. Weaknesses: {}.".format(
-                        row["title"], row["category"], row["price_level"],
-                        row["description"], row["strengths"], row["weaknesses"],
-                    )
-                )
-        if not item_context and not df_sim.empty:
-            sim_mask = (
-                (df_sim["user_id"].astype(str).str.upper() == req.user_id.upper()) &
-                (df_sim["item_id"].astype(str).str.upper() == req.item_id.upper())
-            )
-            if sim_mask.any():
-                item_context = df_sim[sim_mask].iloc[0].get("item_context", "")
-        if not item_context:
-            item_context = req.item_id
-
-        persona_note = (
-            "The user has no saved profile - simulate a generic Nigerian reviewer."
-            if user_prefs == "None"
-            else "CRITICAL: Ground every aspect of the review in this user profile:\n{}".format(user_prefs)
-        )
-
+        persona_note = ("No saved profile - simulate a generic Nigerian reviewer."
+                        if user_prefs == "None"
+                        else "IMPORTANT user profile:\n{}".format(user_prefs))
         prompt = (
-            "You are a review simulation AI (Task A - WhyYouPick Competition).\n"
-            "{}\n\n"
-            "Product to review: '{}'\n\n"
-            "Rules:\n"
-            "- Mirror their tone, language mix (English/Pidgin/Igbo/Hausa as per profile), and strictness\n"
-            "- Let their likes/dislikes directly influence what they praise or criticise\n"
-            "- The rating MUST align with their avg_rating_tendency and strictness level\n"
-            "- If the product has weaknesses matching their dislikes, penalise heavily\n\n"
-            "Return ONLY valid JSON with keys:\n"
-            "  'rating'     (float 1.0-5.0),\n"
-            "  'review'     (string - 2-4 sentences in the user's authentic tone),\n"
-            "  'confidence' (string like '91%'),\n"
-            "  'reasoning'  (array of 3-4 strings explaining how persona traits shaped the prediction)."
-        ).format(persona_note, item_context)
-
+            "You are a review simulation AI (Task A).\n{}\n\nProduct: '{}'\n\n"
+            "Rules: mirror tone/language mix/strictness from profile. "
+            "Rating must match avg_rating_tendency. Penalise if product weaknesses match dislikes.\n\n"
+            "Return JSON: rating (float 1-5), review (2-4 sentences), "
+            "confidence (string like 91%), reasoning (array of 3-4 strings)."
+        ).format(persona_note, item_ctx)
         try:
-            response = client.chat.completions.create(
+            resp = client.chat.completions.create(
                 model="llama3-70b-8192",
                 messages=[
-                    {"role": "system", "content": "You are a review simulation AI. Always output valid JSON only."},
-                    {"role": "user",   "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-            )
-            return json.loads(response.choices[0].message.content)
+                    {"role": "system", "content": "Review simulation AI. Output valid JSON only."},
+                    {"role": "user", "content": prompt}],
+                response_format={"type": "json_object"})
+            return json.loads(resp.choices[0].message.content)
         except Exception as e:
-            print("[WARN] AI Error (simulate): {}".format(e))
+            print("simulate error: {}".format(e))
 
     return {
         "rating": 3.4,
-        "review": "The features are actually pretty good, but for this price tag I expected much better battery life. It feels well built though.",
+        "review": "The features are good but for this price tag I expected better battery life. Solid build quality though.",
         "confidence": "92%",
-        "reasoning": [
-            "Tone Match: Concise and slightly critical.",
-            "Preference Hit: 'Well built' aligns with user's value of durability.",
-            "Bias Hit: User penalises items heavily for battery/price issues.",
-        ],
-    }
+        "reasoning": ["Tone Match: Concise and critical.", "Preference Hit: Durability valued.",
+                      "Bias Hit: Penalised for price/battery."]}
 
-# ── Task B: Recommend Items ───────────────────────────────────────────────────
+# ── Task B: Recommend ─────────────────────────────────────────────────────────
 @app.post("/api/recommend")
 def recommend_items(req: RecommendRequest):
     if client:
-        user_prefs = req.custom_persona.strip() if req.custom_persona.strip() else get_user_preferences(req.user_id)
+        user_prefs = req.custom_persona.strip() or get_user_preferences(req.user_id)
+        cat = detect_category(req.message)
+        catalog = get_catalog_items(cat, n=12)
 
-        detected_cat = detect_category(req.message)
-        catalog_items = get_catalog_items(detected_cat, n=12)
-
-        persona_note = (
-            "The user has no saved profile - make sensible general recommendations."
-            if user_prefs == "None"
-            else "CRITICAL: Personalise every recommendation based on this user profile:\n{}".format(user_prefs)
-        )
+        persona_note = ("No saved profile - make general recommendations."
+                        if user_prefs == "None"
+                        else "IMPORTANT user profile:\n{}".format(user_prefs))
 
         catalog_text = "\n".join(
-            "[{}] {} ({}, {}) - {} | Strengths: {} | Weaknesses: {} | Quality: {:.2f} | Popularity: {:.2f}".format(
-                it["item_id"], it["title"], it["category"], it["price_level"],
-                it["description"], it["strengths"], it["weaknesses"],
-                it["base_quality_score"], it["popularity_score"],
-            )
-            for it in catalog_items
-        ) if catalog_items else "(No catalog available - suggest realistic general items.)"
+            "[{}] {} ({}, {}) | {} | Strengths: {} | Weaknesses: {}".format(
+                it.get("item_id",""), it.get("title",""), it.get("category",""),
+                it.get("price_level",""), it.get("description",""),
+                it.get("strengths",""), it.get("weaknesses",""))
+            for it in catalog
+        ) if catalog else "(Use general knowledge to suggest 3 items)"
 
         prompt = (
-            "You are a personalised recommendation AI (Task B - WhyYouPick Competition).\n"
-            "{}\n\n"
-            "Available catalog items (select ONLY from these, do not invent items):\n{}\n\n"
-            "User request: '{}'\n\n"
-            "Select the 3 BEST items from the catalog that match BOTH the user's request AND their persona.\n"
-            "For each item:\n"
-            "- Explain exactly WHY it suits their specific likes, dislikes, strictness, and preferred categories\n"
-            "- Penalise items whose weaknesses match their known dislikes\n"
-            "- Compute a match score (0-100%) based on how well strengths align with their likes\n"
-            "- Use a warm, conversational Nigerian tone in response_text\n\n"
-            "Return ONLY valid JSON with:\n"
-            "  'response_text' (string - 2-3 sentence conversational intro referencing the user's persona),\n"
-            "  'items' (array of exactly 3 objects, each with: 'name', 'item_id', 'score' (like '87%'),\n"
-            "           'reason' (2 sentences linking item to persona), 'category', 'image_keyword')."
+            "You are a personalised recommendation AI (Task B).\n{}\n\n"
+            "Catalog (pick ONLY from these):\n{}\n\n"
+            "User says: '{}'\n\n"
+            "Pick the 3 BEST items matching the user's request AND persona. "
+            "Penalise items whose weaknesses match dislikes. "
+            "Score 0-100%% based on how strengths match likes.\n\n"
+            "Return JSON: response_text (warm 2-3 sentence Nigerian-tone intro), "
+            "items (array of 3 objects with: name, item_id, score, reason (2 sentences), "
+            "category, image_keyword)."
         ).format(persona_note, catalog_text, req.message)
-
         try:
-            response = client.chat.completions.create(
+            resp = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
-                    {"role": "system", "content": "You are a personalized recommendation AI. Always output valid JSON only."},
-                    {"role": "user",   "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-            )
-            result = json.loads(response.choices[0].message.content)
-
-            # Enrich items with catalog metadata
-            catalog_map = {it["item_id"]: it for it in catalog_items}
-            for rec_item in result.get("items", []):
-                iid = rec_item.get("item_id", "")
-                if iid in catalog_map:
-                    ci = catalog_map[iid]
-                    rec_item.setdefault("category",      ci["category"])
-                    rec_item.setdefault("price_level",   ci["price_level"])
-                    rec_item.setdefault("quality_score", ci["base_quality_score"])
+                    {"role": "system", "content": "Personalised recommendation AI. Output valid JSON only."},
+                    {"role": "user", "content": prompt}],
+                response_format={"type": "json_object"})
+            result = json.loads(resp.choices[0].message.content)
+            # Enrich with catalog metadata
+            cmap = {it["item_id"]: it for it in catalog}
+            for item in result.get("items", []):
+                ci = cmap.get(item.get("item_id", ""), {})
+                item.setdefault("category",      ci.get("category", ""))
+                item.setdefault("price_level",   ci.get("price_level", ""))
+                item.setdefault("quality_score", ci.get("base_quality_score", ""))
             return result
         except Exception as e:
-            print("[WARN] AI Error (recommend): {}".format(e))
+            print("recommend error: {}".format(e))
 
     return {
         "response_text": "Based on your preference for durability and value, here are my top picks:",
         "items": [
-            {"name": "Dell UltraSharp 27\"", "item_id": "I0001", "score": "89%",
-             "reason": "Highly durable display with great value for a discerning buyer.", "category": "Electronics", "image_keyword": "monitor"},
-            {"name": "LG 27UN850-W",         "item_id": "I0002", "score": "82%",
-             "reason": "Great ergonomics and colour accuracy for long work sessions.",   "category": "Electronics", "image_keyword": "monitor"},
-            {"name": "BenQ EW2480",           "item_id": "I0003", "score": "78%",
-             "reason": "Budget-friendly with solid build quality.",                     "category": "Electronics", "image_keyword": "monitor"},
-        ],
-    }
+            {"name": "Action Thriller 1", "item_id": "I0001", "score": "89%",
+             "reason": "High quality with great value.", "category": "Movies", "image_keyword": "movie"},
+            {"name": "Backpack 2",        "item_id": "I0002", "score": "82%",
+             "reason": "Durable and practical design.", "category": "Fashion", "image_keyword": "backpack"},
+            {"name": "Bible Study Guide 3","item_id": "I0003","score": "78%",
+             "reason": "Great quality for the price.", "category": "Books",   "image_keyword": "book"},
+        ]}
 
-# ── Static file serving ───────────────────────────────────────────────────────
+# ── Static serving ────────────────────────────────────────────────────────────
 @app.get("/")
 def serve_landing():
     return FileResponse(os.path.join(BASE_DIR, "landing.html"))
@@ -561,5 +479,4 @@ app.mount("/", StaticFiles(directory=BASE_DIR, html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting WhyYouPick API server on http://localhost:8003...")
     uvicorn.run(app, host="0.0.0.0", port=8003, reload=True)
