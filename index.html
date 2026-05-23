@@ -1,0 +1,2600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>WhyYouPick: AI Review & Recommendation Agent</title>
+    <!-- iOS PWA / Android web-app -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="WhyYouPick">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#d95c14">
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+:root {
+  --primary: #d95c14; /* Burnt orange */
+  --primary-light: #f0803c;
+  --primary-hover: #cc5200;
+  --accent: #14a098; /* Teal */
+  --accent-light: #4cb8b1;
+  --bg-color: #f7f9fc;
+  --surface: #ffffff;
+  --text-main: #111827;
+  --text-muted: #6b7280;
+  --border-color: #e5e7eb;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 20px;
+  --font-family: 'Inter', sans-serif;
+  
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+  /* Remove tap flash on Android, iOS */
+  -webkit-tap-highlight-color: transparent;
+  /* Faster tap response — no 300ms delay */
+  touch-action: manipulation;
+}
+
+html {
+  /* iOS Safari: allow fill-available so 100dvh works correctly */
+  height: -webkit-fill-available;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden; /* App container handles scrolling */
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+a:hover {
+  color: var(--primary-hover);
+}
+
+/* Base Utility */
+.w-full { width: 100%; }
+.mt-2 { margin-top: 0.5rem; }
+.mt-4 { margin-top: 1rem; }
+.padded { padding: 1.5rem; }
+.text-center { text-align: center; }
+.hidden { display: none !important; }
+.primary-text { color: var(--primary); }
+.teal-text { color: var(--accent); }
+.muted-text { color: var(--text-muted); }
+/* Accounts for home indicator on iPhone X+ and Android gesture bar */
+.spacer-bottom { height: calc(80px + env(safe-area-inset-bottom, 0px)); }
+
+/* App Container */
+#app-container {
+  max-width: 480px;
+  margin: 0 auto;
+  height: 100vh;           /* fallback */
+  height: 100dvh;          /* dynamic: shrinks when iOS/Android chrome is visible */
+  position: relative;
+  background-color: var(--bg-color);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Screens */
+.screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-color);
+  display: none;
+  flex-direction: column;
+  z-index: 10;
+  animation: fadeIn 0.3s ease;
+  overflow-y: auto;
+  /* Smooth momentum scrolling on iOS */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.screen.active {
+  display: flex;
+}
+.main-layout {
+  background: var(--bg-color);
+  z-index: 5;
+}
+.tab-content {
+  display: none;
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-color);
+  /* Safe area: extra space for iPhone home indicator */
+  padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.tab-content.active {
+  display: block;
+  animation: slideUp 0.3s ease forwards;
+}
+.scrollable {
+  overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.scrollable::-webkit-scrollbar { 
+  display: none; /* Chrome */
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0.4; transform: scale(0.9); }
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Typography */
+h1 { font-size: 1.75rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+h2 { font-size: 1.5rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem; }
+h3 { font-size: 1.25rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.5rem; }
+h4 { font-size: 1rem; font-weight: 600; color: var(--text-main); }
+p { font-size: 0.95rem; color: var(--text-muted); line-height: 1.5; }
+
+/* Buttons */
+button {
+  cursor: pointer;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  /* Prevent iOS gray flash on tap */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-appearance: none;
+  /* Ensure tap targets meet 44px minimum (iOS HIG) */
+  min-height: 44px;
+}
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+  padding: 0.875rem 1.5rem;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 4px 14px rgba(217, 92, 20, 0.3);
+}
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-1px);
+}
+.btn-primary:active {
+  transform: translateY(1px);
+}
+.btn-outline {
+  background-color: transparent;
+  color: var(--text-main);
+  padding: 0.875rem 1.5rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  font-weight: 500;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.btn-outline:hover {
+  background-color: #f3f4f6;
+}
+.btn-outline-small {
+  background-color: transparent;
+  color: var(--primary);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--primary);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.btn-outline-small:hover {
+  background-color: rgba(217, 92, 20, 0.05);
+}
+.icon-btn, .icon-btn-small {
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-main);
+}
+.icon-btn { font-size: 1.5rem; padding: 0.5rem; border-radius: 50%; }
+.icon-btn:hover { background: rgba(0,0,0,0.05); }
+.icon-btn-small { font-size: 1.25rem; width: 36px; height: 36px; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color); }
+.icon-btn-small.teal-bg { background: var(--accent); color: white; border: none; }
+
+/* Navigation */
+.top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(247, 249, 252, 0.9);
+  backdrop-filter: blur(10px);
+}
+.top-nav.shadow {
+  box-shadow: var(--shadow-sm);
+}
+.top-nav.white-text .nav-title, .top-nav.white-text .icon-btn {
+  color: white;
+}
+.nav-title {
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.bottom-nav {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  /* Grow to accommodate iOS home indicator / Android gesture bar */
+  height: calc(70px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.05);
+  display: flex;
+  justify-content: space-around;
+  /* Align icons to top portion, padding handles the safe area below */
+  align-items: flex-start;
+  padding: 0 0.5rem;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  z-index: 50;
+  border-top: 1px solid var(--border-color);
+}
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-decoration: none;
+  flex: 1;
+  padding: 0.5rem 0;
+}
+.nav-item i {
+  font-size: 1.5rem;
+  transition: transform 0.2s;
+}
+.nav-item.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+.nav-item.active i {
+  transform: translateY(-2px);
+}
+
+/* Splash Screen */
+.splash-screen {
+  background: linear-gradient(135deg, #fff, #f0fdfa, #fff3eb);
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 2rem;
+}
+.logo-box {
+  background: var(--primary);
+  width: 80px;
+  height: 80px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.5rem;
+  box-shadow: 0 10px 25px rgba(217, 92, 20, 0.4);
+}
+.logo-box i {
+  font-size: 2.5rem;
+  color: white;
+}
+.splash-content h1 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+.splash-content .subtitle {
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.loader-container {
+  position: absolute;
+  bottom: 4rem;
+  width: 80%;
+  max-width: 300px;
+}
+.loader-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-muted);
+}
+.progress-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--primary);
+  width: 0%;
+  border-radius: 3px;
+  transition: width 0.1s ease;
+}
+.loader-status {
+  font-size: 0.75rem;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot.gray { background: #d1d5db; }
+.dot.teal { background: var(--accent); }
+
+/* Login Screen */
+.auth-header {
+  padding: 1rem 2rem;
+  text-align: center;
+}
+.auth-icon-badge {
+  background: var(--primary);
+  width: 64px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+  color: white;
+  font-size: 1.5rem;
+}
+.auth-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  margin: 0 1.5rem;
+  box-shadow: var(--shadow-md);
+}
+.input-group {
+  margin-bottom: 1.25rem;
+  text-align: left;
+}
+.input-group label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+.input-group input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 0.95rem;
+  background: #f9fafb;
+  transition: border 0.2s;
+}
+.input-group input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: white;
+}
+.password-input {
+  position: relative;
+}
+.password-input i {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+}
+.forgot-password {
+  text-align: right;
+  margin-bottom: 1.5rem;
+  font-size: 0.85rem;
+}
+.divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 1.5rem 0;
+}
+.divider::before, .divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--border-color);
+}
+.divider span {
+  padding: 0 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.social-logins {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.auth-footer {
+  text-align: center;
+  margin-top: 2rem;
+}
+.copyright {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  position: absolute;
+  bottom: 1rem;
+  width: 100%;
+}
+
+/* Signup Screen */
+.signup-header {
+  background: #1a1a2e;
+  padding-bottom: 2rem;
+  position: relative;
+  overflow: hidden;
+}
+.signup-header h2 {
+  color: white;
+  padding: 0 1.5rem;
+  position: relative;
+  z-index: 2;
+}
+.signup-graphic {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  width: 100%;
+  z-index: 1;
+}
+.auth-form-container {
+  padding: 2rem 1.5rem;
+  background: var(--bg-color);
+  margin-top: -1rem;
+  border-radius: 20px 20px 0 0;
+  position: relative;
+  z-index: 2;
+}
+.toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  padding: 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  margin-bottom: 1.5rem;
+}
+.toggle-info h4 { margin-bottom: 0.25rem; }
+.toggle-info p { font-size: 0.75rem; }
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #cbd5e1;
+  transition: .4s;
+  border-radius: 34px;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px; width: 18px;
+  left: 3px; bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+input:checked + .slider { background-color: var(--primary); }
+input:checked + .slider:before { transform: translateX(20px); }
+
+.terms-text {
+  text-align: center;
+  font-size: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* Dashboard / Workspace */
+.header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 1.5rem 1rem;
+}
+.logo-title h2 { color: var(--primary); margin: 0; font-size: 1.25rem; }
+.header-actions { display: flex; gap: 0.5rem; }
+.page-title { padding: 0 1.5rem 1rem; }
+.page-title h1 { margin-bottom: 0.25rem; }
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding: 0 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.metric-card {
+  background: var(--surface);
+  padding: 1rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+}
+.metric-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+.metric-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+.metric-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+.metric-sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.agent-config-card {
+  background: var(--surface);
+  margin: 0 1.5rem 1.5rem;
+  padding: 1.25rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.agent-config-card:hover { transform: translateY(-2px); }
+.config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.status-text { font-weight: 600; font-size: 0.85rem; }
+.agent-config-card p { font-size: 0.85rem; margin-bottom: 1rem; }
+.progress-bar-bg.small { height: 8px; margin-bottom: 0; }
+
+.action-cards-row {
+  display: flex;
+  gap: 1rem;
+  padding: 0 1.5rem;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.action-cards-row::-webkit-scrollbar { display: none; }
+.action-card {
+  min-width: 100px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.25rem 1rem;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+}
+.action-icon {
+  background: #fff3eb;
+  color: var(--primary);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 0.75rem;
+  font-size: 1.5rem;
+}
+.action-card h4 { font-size: 0.85rem; line-height: 1.2; }
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 1.5rem;
+  margin-bottom: 1rem;
+}
+.section-header h3 { margin: 0; font-size: 1.1rem; }
+.section-header a { font-size: 0.85rem; }
+
+.activity-list {
+  padding: 0 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.activity-item {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  padding: 1rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+}
+.activity-icon { margin-right: 1rem; }
+.activity-details { flex: 1; }
+.activity-details h4 { font-size: 0.9rem; font-weight: 500; }
+.activity-status { font-size: 0.85rem; font-weight: 600; }
+
+/* Setup Phase */
+.setup-steps { padding: 0 1.5rem 6rem; display: flex; flex-direction: column; gap: 1rem; }
+.step-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface);
+  padding: 1.25rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+.step-content { display: flex; gap: 1rem; }
+.step-number { font-size: 0.85rem; font-weight: 700; color: var(--primary); padding-top: 0.2rem; }
+.step-text h3 { font-size: 1rem; margin-bottom: 0.25rem; }
+.step-text p { font-size: 0.8rem; }
+.step-icon {
+  background: #fff3eb;
+  color: var(--primary);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fixed-bottom-btn {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding: 1.5rem;
+  background: linear-gradient(to top, var(--bg-color) 70%, transparent);
+}
+
+/* User Modeling */
+.profile-header {
+  display: flex;
+  align-items: center;
+  padding: 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-color);
+  gap: 1rem;
+}
+.avatar-large {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.profile-info { flex: 1; }
+.profile-info h2 { font-size: 1.1rem; margin-bottom: 0.1rem; }
+.profile-info p { font-size: 0.85rem; }
+
+.behavioral-signals, .chart-container, .list-section {
+  padding: 1.5rem;
+  background: var(--surface);
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+.signals-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.signal-tag {
+  background: #e0f2fe;
+  color: #0369a1;
+  padding: 0.4rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.signal-tag:nth-child(even) { background: #fff3eb; color: var(--primary); }
+
+.mock-chart {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  height: 120px;
+  margin-top: 1rem;
+  padding: 0 1rem;
+}
+.bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 15%;
+  height: 100%;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.bar {
+  width: 100%;
+  background: #cbd5e1;
+  border-radius: 4px 4px 0 0;
+  transition: height 1s ease-out;
+}
+.bar-col span { font-size: 0.75rem; color: var(--text-muted); }
+
+.review-item {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.review-item:last-child { border-bottom: none; padding-bottom: 0; }
+.rating-stars { color: var(--warning); font-size: 1.1rem; margin-bottom: 0.25rem; }
+.rating-stars.huge { font-size: 1.5rem; margin-bottom: 0.5rem; }
+.review-item h4 { font-size: 0.9rem; margin-bottom: 0.25rem; }
+.review-item p { font-style: italic; font-size: 0.85rem; }
+
+/* Simulate Review */
+.simulation-result { margin: 1.5rem; animation: slideUp 0.4s ease; }
+.prediction-card {
+  background: white;
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--primary-light);
+  position: relative;
+  overflow: hidden;
+}
+.prediction-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 4px;
+  background: var(--primary);
+}
+.pred-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.pred-header h3 { margin: 0; }
+.confidence { background: #dcfce7; color: #166534; font-size: 0.7rem; padding: 0.25rem 0.5rem; border-radius: 12px; font-weight: 600; }
+.simulated-text { background: var(--bg-color); padding: 1rem; border-radius: var(--radius); margin-top: 1rem; }
+.simulated-text h4 { font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--text-muted); }
+
+.explanation-card { background: var(--surface); padding: 1.25rem; border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.explanation-card h3 { display: flex; align-items: center; gap: 0.5rem; font-size: 1rem; }
+.reasoning-list { margin-top: 1rem; padding-left: 1.5rem; font-size: 0.85rem; line-height: 1.6; color: var(--text-muted); }
+.reasoning-list strong { color: var(--text-main); }
+
+/* Recommendation Chat */
+.chat-layout { display: flex; flex-direction: column; }
+.chat-container { flex: 1; padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.5rem; padding-bottom: 80px; }
+.message { display: flex; gap: 1rem; max-width: 90%; }
+.message.system { align-self: flex-start; }
+.message.user { align-self: flex-end; flex-direction: row-reverse; }
+.msg-avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; }
+.message.user .msg-avatar { background: var(--text-muted); }
+.msg-bubble { background: white; padding: 1rem; border-radius: 16px; box-shadow: var(--shadow-sm); font-size: 0.9rem; line-height: 1.5; }
+.message.system .msg-bubble { border-top-left-radius: 4px; border: 1px solid var(--border-color); }
+.message.user .msg-bubble { border-top-right-radius: 4px; background: var(--accent); color: white; }
+
+.rec-carousel { display: flex; gap: 1rem; margin-top: 1rem; overflow-x: auto; padding-bottom: 0.5rem; scrollbar-width: none; }
+.rec-carousel::-webkit-scrollbar { display: none; }
+.rec-card { min-width: 140px; background: var(--bg-color); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border-color); }
+.rec-img { background: #e2e8f0; height: 80px; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #94a3b8; }
+.rec-info { padding: 0.75rem; }
+.rec-info h5 { font-size: 0.85rem; margin-bottom: 0.25rem; }
+.rec-score { font-size: 0.7rem; color: var(--success); font-weight: 600; margin-bottom: 0.25rem; }
+.rec-quality { font-size: 0.68rem; color: var(--text-muted); margin-bottom: 0.2rem; }
+.rec-badge { display: inline-block; background: #e0f2fe; color: #0369a1; font-size: 0.62rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.03em; }
+.rec-badge-price { background: #fff3eb; color: var(--primary); }
+.rec-info p { font-size: 0.75rem; }
+
+.chat-input-area { position: absolute; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); left: 0; width: 100%; padding: 1rem; background: var(--surface); box-shadow: 0 -4px 10px rgba(0,0,0,0.05); display: flex; gap: 0.5rem; z-index: 40; }
+.chat-input-area input { flex: 1; border: 1px solid var(--border-color); border-radius: 24px; padding: 0.75rem 1.25rem; font-size: 0.95rem; outline: none; }
+.chat-input-area input:focus { border-color: var(--primary); }
+.send-btn { background: var(--primary); color: white; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+
+/* Evaluation Lab */
+.eval-tabs { display: flex; background: #e2e8f0; border-radius: 12px; padding: 0.25rem; margin-bottom: 1.5rem; }
+.eval-tab { flex: 1; text-align: center; padding: 0.75rem; border-radius: 10px; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); background: transparent; }
+.eval-tab.active { background: white; color: var(--text-main); box-shadow: var(--shadow-sm); }
+.eval-content { display: none; animation: fadeIn 0.3s ease; }
+.eval-content.active { display: block; }
+.metric-box { background: var(--surface); padding: 1rem; border-radius: var(--radius); text-align: center; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color); }
+.metric-box .val { font-size: 1.5rem; font-weight: 700; color: var(--primary); margin-bottom: 0.25rem; }
+.metric-box .lbl { font-size: 0.75rem; color: var(--text-muted); font-weight: 600; }
+.eval-card { background: var(--surface); padding: 1.25rem; border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.progress-row { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; font-size: 0.85rem; }
+.progress-row span:first-child { width: 130px; font-weight: 500; }
+.progress-row span:last-child { font-weight: 600; width: 40px; text-align: right; }
+.bar-wrap { flex: 1; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; }
+.bar-wrap .bar { height: 100%; border-radius: 4px; }
+.bar-wrap .bar.teal { background: var(--accent); }
+.capability-row { display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; border-bottom: 1px solid var(--border-color); }
+.capability-row:last-child { border-bottom: none; padding-bottom: 0; }
+.capability-row span:first-child { font-weight: 500; font-size: 0.9rem; }
+.badge { padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+.badge.success { background: #dcfce7; color: #166534; }
+.badge.warning { background: #fef3c7; color: #b45309; }
+
+/* Explainability */
+.explain-card { background: var(--surface); padding: 1.5rem; border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+.retrieved-item { padding: 1rem; background: var(--bg-color); border-radius: var(--radius-sm); margin-top: 1rem; border-left: 3px solid var(--accent); }
+.similarity-score { float: right; font-size: 0.75rem; font-weight: 600; color: var(--accent); background: rgba(20, 160, 152, 0.1); padding: 0.2rem 0.5rem; border-radius: 12px; }
+.graph-viz { margin-top: 1.5rem; padding: 1rem; background: var(--bg-color); border-radius: var(--radius); text-align: center; }
+.node { display: inline-block; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600; color: white; margin: 0.5rem; box-shadow: var(--shadow-sm); }
+.user-node { background: var(--primary); }
+.concept-node { background: var(--accent); }
+.item-node { background: #6366f1; }
+.edge { font-size: 0.7rem; color: var(--text-muted); display: block; margin: -0.25rem 0; }
+
+/* Upload & Catalog */
+.upload-area { border: 2px dashed #cbd5e1; border-radius: var(--radius-lg); padding: 3rem 1.5rem; background: #f8fafc; transition: all 0.2s; }
+.upload-area:hover { border-color: var(--primary); background: #fff3eb; }
+.huge-icon { font-size: 3rem; color: var(--primary); margin-bottom: 1rem; }
+
+.search-bar { display: flex; align-items: center; background: white; padding: 0.75rem 1rem; border-radius: var(--radius); border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); }
+.search-bar i { font-size: 1.25rem; color: var(--text-muted); margin-right: 0.75rem; }
+.search-bar input { border: none; outline: none; width: 100%; font-size: 0.95rem; }
+
+.catalog-item { display: flex; gap: 1rem; padding: 1rem; background: var(--surface); border-radius: var(--radius); margin-bottom: 0.75rem; box-shadow: var(--shadow-sm); border: 1px solid var(--border-color); }
+.item-img { width: 60px; height: 60px; background: #e2e8f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 0.8rem; }
+.item-details h4 { font-size: 0.95rem; margin-bottom: 0.25rem; }
+.item-details p { font-size: 0.8rem; }
+
+/* ── Utility ──────────────────────────────────────────────────────────────── */
+.mt-3 { margin-top: 0.75rem; }
+
+/* ── Task Banner (Task 1 & Task 2 labels) ────────────────────────────────── */
+.task-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background: linear-gradient(135deg, #fff3eb, #ffe8d6);
+  border: 1px solid rgba(217, 92, 20, 0.25);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  line-height: 1.4;
+}
+.task-banner i {
+  color: var(--primary);
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+
+/* ── Badge hint (inline label next to field label) ──────────────────────── */
+.badge-hint {
+  display: inline-block;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+  margin-left: 0.35rem;
+}
+
+/* ── Field hint (helper text below an input) ─────────────────────────────── */
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+  line-height: 1.4;
+}
+
+/* ── Accordion (Custom Persona Override in Task 1) ───────────────────────── */
+.accordion {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+.accordion-toggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.875rem 1rem;
+  background: var(--surface);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-main);
+  text-align: left;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.accordion-toggle:hover { background: #f9fafb; }
+.accordion-toggle span {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.accordion-toggle i { font-size: 1rem; color: var(--primary); }
+.acc-arrow {
+  color: var(--text-muted) !important;
+  transition: transform 0.25s ease;
+}
+.accordion-body {
+  padding: 1rem;
+  background: #fafafa;
+  border-top: 1px solid var(--border-color);
+}
+
+/* ── Persona Panel (Task 2 collapsible in recommend screen) ──────────────── */
+.persona-panel {
+  padding: 0.75rem 1.25rem 0.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-color);
+  animation: slideUp 0.25s ease;
+}
+.persona-panel textarea:focus {
+  outline: none;
+  border-color: var(--primary) !important;
+}
+
+/* ── Input / Select global enhancements ──────────────────────────────────── */
+.input-group select {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: #f9fafb;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  transition: border 0.2s;
+  appearance: auto;
+}
+.input-group select:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: white;
+}
+#simulate-item-input:focus,
+#simulate-persona-input:focus {
+  outline: none;
+  border-color: var(--primary) !important;
+  background: white;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — prevents the "too zoomed in" feeling on small screens
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* All phones ≤ 480px */
+@media (max-width: 480px) {
+  #app-container {
+    max-width: 100%;
+    box-shadow: none;
+  }
+
+  /* Tighter global typography */
+  h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.2rem; }
+  h3 { font-size: 1.05rem; }
+  h4 { font-size: 0.9rem; }
+  p  { font-size: 0.875rem; }
+
+  /* Navigation */
+  .top-nav { padding: 0.75rem 1rem; }
+  .nav-title { font-size: 0.85rem; }
+  .bottom-nav { height: calc(60px + env(safe-area-inset-bottom, 0px)); }
+  .nav-item { font-size: 0.65rem; }
+  .nav-item i { font-size: 1.25rem; }
+  .spacer-bottom { height: calc(65px + env(safe-area-inset-bottom, 0px)); }
+  .tab-content { padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+  .chat-input-area { bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+
+  /* ❌ iOS Safari auto-zooms if input font-size < 16px — this prevents it */
+  input, select, textarea { font-size: 16px !important; }
+
+  /* Splash */
+  .logo-box { width: 64px; height: 64px; border-radius: 18px; }
+  .logo-box i { font-size: 2rem; }
+  .splash-content h1 { font-size: 1.6rem; }
+  .splash-content .subtitle { font-size: 0.75rem; }
+
+  /* Auth screens */
+  .auth-header { padding: 0.75rem 1.5rem; }
+  .auth-icon-badge { width: 52px; height: 34px; font-size: 1.25rem; border-radius: 10px; }
+  .auth-card { padding: 1.25rem; margin: 0 1rem; }
+  .input-group input,
+  .input-group select { padding: 0.75rem 0.875rem; font-size: 0.9rem; }
+  .btn-primary { padding: 0.75rem 1.25rem; font-size: 0.9rem; }
+  .btn-outline  { padding: 0.75rem 1.25rem; font-size: 0.875rem; }
+
+  /* Dashboard */
+  .header-main { padding: 1rem 1rem 0.75rem; }
+  .logo-title h2 { font-size: 1.05rem; }
+  .page-title { padding: 0 1rem 0.75rem; }
+  .page-title h1 { font-size: 1.3rem; }
+  .metrics-grid { padding: 0 1rem; gap: 0.75rem; }
+  .metric-value { font-size: 1.4rem; }
+  .agent-config-card { margin: 0 1rem 1rem; padding: 1rem; }
+  .action-cards-row { padding: 0 1rem; }
+  .section-header { padding: 0 1rem; }
+  .activity-list { padding: 0 1rem; }
+  .activity-item { padding: 0.75rem; }
+  .setup-steps { padding: 0 1rem 5rem; }
+
+  /* Profile / User Modeling */
+  .profile-header { padding: 1rem; }
+  .avatar-large { width: 46px; height: 46px; font-size: 1.2rem; }
+  .profile-info h2 { font-size: 1rem; }
+  .behavioral-signals,
+  .chart-container,
+  .list-section { padding: 1rem; }
+
+  /* Simulate / Result */
+  .simulation-result { margin: 1rem; }
+  .prediction-card { padding: 1.25rem; }
+
+  /* Chat / Recommend */
+  .chat-container { padding: 1rem; gap: 1rem; padding-bottom: 70px; }
+  .msg-bubble { font-size: 0.85rem; padding: 0.75rem; }
+  .msg-avatar { width: 30px; height: 30px; font-size: 1rem; }
+  .rec-card { min-width: 120px; }
+
+  /* Eval Lab */
+  .eval-tab { font-size: 0.75rem; padding: 0.6rem 0.25rem; }
+  .metric-box .val { font-size: 1.25rem; }
+  .progress-row span:first-child { width: 100px; font-size: 0.8rem; }
+
+  /* Forms inside tab-content */
+  .padded { padding: 1rem; }
+  .task-banner { font-size: 0.8rem; padding: 0.65rem 0.875rem; }
+  .upload-area { padding: 2rem 1rem; }
+}
+
+/* Very small phones ≤ 360px (iPhone SE, older Androids) */
+@media (max-width: 360px) {
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 1.1rem; }
+  h3 { font-size: 0.95rem; }
+
+  .auth-card { padding: 1rem; margin: 0 0.75rem; }
+  .input-group input,
+  .input-group select { padding: 0.65rem 0.75rem; font-size: 0.85rem; }
+  .btn-primary { padding: 0.7rem 1rem; font-size: 0.85rem; }
+
+  .metrics-grid { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .metric-value { font-size: 1.25rem; }
+
+  .nav-item { font-size: 0.6rem; }
+  .nav-item i { font-size: 1.1rem; }
+  .msg-bubble { font-size: 0.8rem; }
+  .eval-tab { font-size: 0.7rem; padding: 0.5rem 0.1rem; }
+}
+
+</style>
+</head>
+<body>
+    <div id="app-container">
+        
+        <!-- Screen 1: Splash Screen -->
+        <div id="screen-splash" class="screen active splash-screen">
+            <div class="splash-content">
+                <div class="logo-box">
+                    <i class="ph-fill ph-brain"></i>
+                </div>
+                <h1>WhyYouPick</h1>
+                <p class="subtitle">PERSONALIZED REVIEW &<br>RECOMMENDATION AGENT</p>
+            </div>
+            <div class="loader-container">
+                <div class="loader-header">
+                    <span>Initializing Agent</span>
+                    <span id="splash-progress-text">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="splash-progress"></div>
+                </div>
+                <p class="loader-status"><span class="dot"></span> Building user preference model...</p>
+            </div>
+        </div>
+
+        <!-- Screen 2: Login Screen -->
+        <div id="screen-login" class="screen">
+            <div class="top-nav">
+                <button class="icon-btn" onclick="navigateTo('screen-splash')"><i class="ph ph-caret-left"></i></button>
+            </div>
+            <div class="auth-header" style="padding: 0.5rem 2rem 1rem;">
+                <div class="auth-icon-badge" style="width:56px;height:36px;font-size:1.3rem;border-radius:10px;margin-bottom:0.75rem;">
+                    <i class="ph ph-waves"></i>
+                </div>
+                <h2 style="margin-bottom:0.25rem;">Welcome Back</h2>
+                <p style="font-size:0.85rem;">Sign in to your WhyYouPick workspace.</p>
+            </div>
+
+            <div class="auth-card" style="margin: 0 1.25rem;">
+                <form id="login-form">
+                    <div class="input-group">
+                        <label>EMAIL ADDRESS</label>
+                        <input type="email" placeholder="name@email.com" required>
+                    </div>
+                    <div class="input-group">
+                        <label>PASSWORD</label>
+                        <div class="password-input">
+                            <input type="password" placeholder="••••••••" required>
+                            <i class="ph ph-question"></i>
+                        </div>
+                    </div>
+                    <div class="forgot-password" style="margin-bottom:1rem;">
+                        <a href="#">Forgot password?</a>
+                    </div>
+                    <button type="submit" class="btn-primary w-full" style="margin-bottom:1rem;">Sign In</button>
+                    <!-- Create account link — always visible, no scrolling needed -->
+                    <p style="text-align:center;font-size:0.875rem;color:#6b7280;margin:0;">
+                        New here?
+                        <button type="button" onclick="navigateTo('screen-signup')"
+                            style="background:none;border:none;color:#d95c14;font-weight:600;font-size:0.875rem;cursor:pointer;padding:0;min-height:auto;display:inline;-webkit-appearance:none;">
+                            Create an account →
+                        </button>
+                    </p>
+                </form>
+            </div>
+
+            <div style="text-align:center;padding:1rem 0 0.5rem;font-size:0.7rem;color:#9ca3af;">
+                © 2026 WhyYouPick AI Systems.
+            </div>
+        </div>
+
+        <!-- Screen 3: Signup Screen -->
+        <div id="screen-signup" class="screen">
+            <div class="signup-header">
+                <div class="top-nav white-text">
+                    <button class="icon-btn" onclick="navigateTo('screen-login')"><i class="ph ph-caret-left"></i></button>
+                    <span class="nav-title">Create Account</span>
+                    <span></span>
+                </div>
+                <div class="signup-graphic">
+                    <!-- SVG graphic representing network/waves -->
+                    <svg viewBox="0 0 400 120" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M 50 120 C 150 -50 250 -50 350 120" stroke="#e65c00" stroke-width="2" fill="none" opacity="0.8"/>
+                        <path d="M 70 120 C 160 -30 240 -30 330 120" stroke="#f0803c" stroke-width="2" fill="none" opacity="0.6"/>
+                        <path d="M 90 120 C 170 -10 230 -10 310 120" stroke="#fff" stroke-width="1" fill="none" opacity="0.4"/>
+                        <path d="M 110 120 C 180 10 220 10 290 120" stroke="#e65c00" stroke-width="2" fill="none" opacity="0.9"/>
+                        <path d="M 30 120 C 140 -70 260 -70 370 120" stroke="#fff" stroke-width="1.5" fill="none" opacity="0.5"/>
+                    </svg>
+                </div>
+                <h2>Build Your Personalization Engine</h2>
+            </div>
+            
+            <div class="auth-form-container">
+                <form id="signup-form">
+                    <div class="input-group">
+                        <label>FULL NAME</label>
+                        <input type="text" placeholder="Enter your full name" required>
+                    </div>
+                    <div class="input-group">
+                        <label>EMAIL ADDRESS</label>
+                        <input type="email" placeholder="example@domain.com" required>
+                    </div>
+                    <div class="input-group">
+                        <label>SECURE PASSWORD</label>
+                        <div class="password-input">
+                            <input type="password" placeholder="Min. 8 characters" required>
+                            <i class="ph ph-question"></i>
+                        </div>
+                    </div>
+                    
+                    <div class="toggle-card">
+                        <div class="toggle-info">
+                            <h4>Enable behavior modeling</h4>
+                            <p>Allow the agent to learn review tone, rating behavior, and preferences.</p>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    
+                    <button type="submit" class="btn-primary w-full">Join the Network</button>
+                </form>
+                
+                <p class="terms-text">
+                    By registering, you agree to our Terms and Privacy Policy.
+                </p>
+            </div>
+        </div>
+
+        <!-- Screen 3.5: Onboarding Questionnaire -->
+        <div id="screen-onboarding" class="screen">
+            <div class="top-nav">
+                <span class="nav-title">Initial Setup</span>
+            </div>
+            
+            <div class="padded" style="padding-top: 2rem;">
+                <h2 style="color: var(--primary);">Tell us about your style</h2>
+                <p style="margin-bottom: 2rem;">To accurately simulate your reviews and recommendations, we need a baseline of how you judge items.</p>
+                
+                <form id="onboarding-form">
+                    <div class="input-group">
+                        <label>1. WHAT KIND OF REVIEWER ARE YOU?</label>
+                        <select id="q1-type" style="width: 100%; padding: 0.875rem 1rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: white;">
+                            <option value="Practical (focuses on utility and price)">Practical (focuses on utility and price)</option>
+                            <option value="Emotional (expressive, focuses on experience)">Emotional (expressive, focuses on experience)</option>
+                            <option value="Balanced (weighs pros and cons equally)">Balanced (weighs pros and cons equally)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="input-group mt-4">
+                        <label>2. HOW STRICT ARE YOU WITH RATINGS?</label>
+                        <select id="q2-strictness" style="width: 100%; padding: 0.875rem 1rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: white;">
+                            <option value="Strict (Hardly gives 5 stars)">Strict (Hardly gives 5 stars)</option>
+                            <option value="Moderate (Fair but critical)">Moderate (Fair but critical)</option>
+                            <option value="Generous (Easily gives 5 stars)">Generous (Easily gives 5 stars)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="input-group mt-4">
+                        <label>3. WHAT IS YOUR BIGGEST DEALBREAKER?</label>
+                        <input id="q3-dealbreaker" type="text" placeholder="e.g. Bad battery life, high price, poor customer service" required style="width: 100%; padding: 0.875rem 1rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
+                    </div>
+                    
+                    <div class="input-group mt-4">
+                        <label>4. WHAT IS YOUR PRIMARY SHOPPING CATEGORY?</label>
+                        <select id="q4-category" style="width: 100%; padding: 0.875rem 1rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: white;">
+                            <option value="Electronics & Tech">Electronics & Tech</option>
+                            <option value="Fashion & Apparel">Fashion & Apparel</option>
+                            <option value="Home & Kitchen">Home & Kitchen</option>
+                            <option value="Books & Media">Books & Media</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group mt-4">
+                        <label>5. PREFERRED EXPLANATION LENGTH?</label>
+                        <select id="q5-length" style="width: 100%; padding: 0.875rem 1rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: white;">
+                            <option value="Detailed (In-depth analysis)">Detailed (In-depth analysis)</option>
+                            <option value="Brief (Get straight to the point)">Brief (Get straight to the point)</option>
+                            <option value="Just the score (Minimal text)">Just the score (Minimal text)</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="btn-primary w-full" style="margin-top: 2rem;">Save Profile & Enter App</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main App Wrapper (contains bottom nav) -->
+        <div id="main-app" class="screen main-layout">
+            
+            <!-- Screen 4: Agent Workspace Dashboard (Home) -->
+            <div id="screen-dashboard" class="tab-content active scrollable">
+                <div class="header-main">
+                    <div class="logo-title">
+                        <h2>WhyYouPick</h2>
+                    </div>
+                    <div class="header-actions">
+                        <button class="icon-btn-small" onclick="alert('Help center coming soon!')"><i class="ph ph-question"></i></button>
+                        <button class="icon-btn-small" onclick="alert('You have no new notifications.')"><i class="ph ph-bell"></i></button>
+                        <button class="icon-btn-small teal-bg" onclick="logout()" title="Logout"><i class="ph ph-sign-out"></i></button>
+                    </div>
+                </div>
+                
+                <div class="page-title">
+                    <h1 id="welcome-title">Agent Workspace</h1>
+                    <p>Run review simulation, recommendation, and evaluation workflows.</p>
+                </div>
+                
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <span class="metric-label">USER MODELS</span>
+                        <div class="metric-value-row">
+                            <span class="metric-value primary-text">42</span>
+                            <span class="metric-sub">profiles built</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">SIMULATED REVIEWS</span>
+                        <div class="metric-value-row">
+                            <span class="metric-value primary-text">128</span>
+                            <span class="metric-sub">generated</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">RECOMMENDATIONS</span>
+                        <div class="metric-value-row">
+                            <span class="metric-value primary-text">86</span>
+                            <span class="metric-sub">ranked lists</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">EVALUATION SCORE</span>
+                        <div class="metric-value-row">
+                            <span class="metric-value teal-text">A/B</span>
+                            <span class="metric-sub">metrics</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="agent-config-card" onclick="navigateToTab('screen-setup')">
+                    <div class="config-header">
+                        <div class="status-indicator"><span class="dot teal"></span> Active Agent Config</div>
+                        <span class="status-text primary-text">Ready</span>
+                    </div>
+                    <p>Model: Hybrid Retrieval + User Behavior Agent</p>
+                    <div class="progress-bar-bg small">
+                        <div class="progress-bar-fill" style="width: 80%;"></div>
+                    </div>
+                </div>
+                
+                <div class="action-cards-row">
+                    <div class="action-card" onclick="navigateToTab('screen-user-model')">
+                        <div class="action-icon"><i class="ph ph-user-focus"></i></div>
+                        <h4>User<br>Model</h4>
+                    </div>
+                    <div class="action-card" onclick="navigateToTab('screen-simulate')">
+                        <div class="action-icon"><i class="ph ph-chat-teardrop-text"></i></div>
+                        <h4>Simulate<br>Review</h4>
+                    </div>
+                    <div class="action-card" onclick="navigateToTab('screen-recommend')">
+                        <div class="action-icon"><i class="ph ph-list-stars"></i></div>
+                        <h4>Recommend<br>Items</h4>
+                    </div>
+                </div>
+                
+                <div class="section-header">
+                    <h3>Recent Activity</h3>
+                    <a href="#">See All</a>
+                </div>
+                
+                <div class="activity-list">
+                    <div class="activity-item">
+                        <div class="activity-icon"><span class="dot teal"></span></div>
+                        <div class="activity-details">
+                            <h4>Review Simulation for User U014</h4>
+                        </div>
+                        <div class="activity-status primary-text">92.1%</div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-icon"><span class="dot gray"></span></div>
+                        <div class="activity-details">
+                            <h4>Cold-start Recommendation Test</h4>
+                        </div>
+                        <div class="activity-status muted-text">Pending</div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-icon"><span class="dot teal"></span></div>
+                        <div class="activity-details">
+                            <h4>Nigerian Tone Adaptation Check</h4>
+                        </div>
+                        <div class="activity-status muted-text">Good</div>
+                    </div>
+                </div>
+                <div class="spacer-bottom"></div>
+            </div>
+
+            <!-- Screen 5: Setup Phase -->
+            <div id="screen-setup" class="tab-content scrollable">
+                <div class="top-nav">
+                    <button class="icon-btn" onclick="navigateToTab('screen-dashboard')"><i class="ph ph-caret-left"></i></button>
+                    <span class="nav-title">SETUP PHASE</span>
+                    <span></span>
+                </div>
+                
+                <div class="page-title padded">
+                    <h1>Set Up Your Agent</h1>
+                    <p>Complete these steps to run review and recommendation tasks.</p>
+                </div>
+                
+                <div class="setup-steps">
+                    <div class="step-card" onclick="navigateToTab('screen-user-model')">
+                        <div class="step-content">
+                            <div class="step-number">01</div>
+                            <div class="step-text">
+                                <h3>Build User Profile</h3>
+                                <p>Extract rating behavior, tone, preferences, and review style from user history.</p>
+                            </div>
+                        </div>
+                        <div class="step-icon"><i class="ph ph-question"></i></div>
+                    </div>
+                    
+                    <div class="step-card" onclick="navigateToTab('screen-catalog')">
+                        <div class="step-content">
+                            <div class="step-number">02</div>
+                            <div class="step-text">
+                                <h3>Load Item Catalog</h3>
+                                <p>Add products, movies, places, books, or other items with metadata.</p>
+                            </div>
+                        </div>
+                        <div class="step-icon"><i class="ph ph-question"></i></div>
+                    </div>
+                    
+                    <div class="step-card" onclick="navigateToTab('screen-simulate')">
+                        <div class="step-content">
+                            <div class="step-number">03</div>
+                            <div class="step-text">
+                                <h3>Simulate Review</h3>
+                                <p>Predict how a user would rate and review an unseen item.</p>
+                            </div>
+                        </div>
+                        <div class="step-icon"><i class="ph ph-question"></i></div>
+                    </div>
+                    
+                    <div class="step-card" onclick="navigateToTab('screen-recommend')">
+                        <div class="step-content">
+                            <div class="step-number">04</div>
+                            <div class="step-text">
+                                <h3>Generate Recommendations</h3>
+                                <p>Rank items using user preferences, conversation, and retrieval reasoning.</p>
+                            </div>
+                        </div>
+                        <div class="step-icon"><i class="ph ph-question"></i></div>
+                    </div>
+                </div>
+                
+                <div class="fixed-bottom-btn">
+                    <button class="btn-primary w-full" onclick="navigateToTab('screen-dashboard')">Start Agent Setup <i class="ph ph-caret-right"></i></button>
+                </div>
+            </div>
+
+            <!-- Screen 6/7: User Modeling / Profile -->
+            <div id="screen-user-model" class="tab-content scrollable">
+                <div class="top-nav">
+                    <span class="nav-title">USER MODELING</span>
+                    <button class="icon-btn-small" onclick="navigateToTab('screen-dataset')"><i class="ph ph-upload-simple"></i></button>
+                </div>
+                
+                <div class="profile-header">
+                    <div class="avatar-large" id="model-avatar" style="position: relative; overflow: hidden; cursor: pointer; display: flex; align-items: center; justify-content: center;" title="Click to upload profile picture">
+                        <span id="model-avatar-initial">U</span>
+                        <input type="file" id="profile-pic-upload" accept="image/*" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
+                    </div>
+                    <div class="profile-info">
+                        <h2 id="model-username">Your Profile</h2>
+                        <p>Modeled from Questionnaire</p>
+                    </div>
+                    <button class="btn-outline-small" onclick="runExtraction()">Extract Signals</button>
+                </div>
+                
+                <div class="behavioral-signals">
+                    <h3>Behavioral Signals</h3>
+                    <div class="signals-grid">
+                        <div class="signal-tag">Strict Rater (Avg 3.2)</div>
+                        <div class="signal-tag">Concise Tone</div>
+                        <div class="signal-tag">Values "Durability"</div>
+                        <div class="signal-tag">Negative Bias: Price</div>
+                        <div class="signal-tag">Positive Bias: Quality</div>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <h3>Rating Distribution</h3>
+                    <div class="mock-chart">
+                        <div class="bar-col"><div class="bar" style="height: 10%;"></div><span>1</span></div>
+                        <div class="bar-col"><div class="bar" style="height: 20%;"></div><span>2</span></div>
+                        <div class="bar-col"><div class="bar" style="height: 60%; background: var(--primary);"></div><span>3</span></div>
+                        <div class="bar-col"><div class="bar" style="height: 40%;"></div><span>4</span></div>
+                        <div class="bar-col"><div class="bar" style="height: 15%;"></div><span>5</span></div>
+                    </div>
+                </div>
+                
+                <div class="list-section">
+                    <div class="section-header">
+                        <h3>Review History Sample</h3>
+                        <a href="#" onclick="navigateToTab('screen-history')">View All</a>
+                    </div>
+                    <div class="review-item">
+                        <div class="rating-stars">★★★☆☆</div>
+                        <h4>Item: Wireless Earbuds X2</h4>
+                        <p>"Decent sound but the battery life is completely unacceptable. Lasted only 3 hours."</p>
+                    </div>
+                    <div class="review-item">
+                        <div class="rating-stars">★★★★☆</div>
+                        <h4>Item: Ergonomic Chair Pro</h4>
+                        <p>"Very sturdy build. A bit pricey but worth the investment for my back."</p>
+                    </div>
+                </div>
+                <div class="spacer-bottom"></div>
+            </div>
+
+            <!-- Screen 8: Simulate Review (Task 1) -->
+            <div id="screen-simulate" class="tab-content scrollable">
+                <div class="top-nav">
+                    <span class="nav-title">SIMULATE REVIEW</span>
+                    <button class="icon-btn-small" title="Item Catalog" onclick="navigateToTab('screen-catalog')"><i class="ph ph-list"></i></button>
+                </div>
+
+                <div class="padded">
+
+                    <!-- ── Task 1 banner ── -->
+                    <div class="task-banner">
+                        <i class="ph-fill ph-star"></i>
+                        <span><strong>Task 1</strong> &mdash; Input a user persona &amp; product details, get a predicted rating + review.</span>
+                    </div>
+
+                    <!-- Product / Item -->
+                    <div class="input-group mt-3">
+                        <label>PRODUCT / ITEM DESCRIPTION <span class="badge-hint">any category</span></label>
+                        <input
+                            id="simulate-item-input"
+                            type="text"
+                            placeholder="e.g. Avatar 2 movie, Jollof Rice, Samsung Galaxy S24, Guinness stout…"
+                            style="width:100%; padding:0.875rem 1rem; border:1px solid var(--border-color); border-radius:var(--radius-sm);"
+                        >
+                        <p class="field-hint">Leave blank to use a catalogue item below.</p>
+                    </div>
+
+                    <!-- Catalogue fallback -->
+                    <div class="input-group">
+                        <label>OR PICK FROM CATALOGUE</label>
+                        <select id="simulate-item-select">
+                            <option value="Item_992">Item_992: Noise Cancelling Headphones</option>
+                            <option value="Item_441">Item_441: Mechanical Keyboard</option>
+                            <option value="Item_007">Item_007: Ergonomic Office Chair</option>
+                            <option value="Item_303">Item_303: Running Shoes</option>
+                        </select>
+                    </div>
+
+                    <!-- Persona accordion -->
+                    <div class="accordion" id="persona-accordion-sim">
+                        <button class="accordion-toggle" onclick="toggleAccordion('persona-body-sim', this)">
+                            <span><i class="ph ph-user-gear"></i> Custom Persona Override</span>
+                            <i class="ph ph-caret-down acc-arrow"></i>
+                        </button>
+                        <div id="persona-body-sim" class="accordion-body" style="display:none;">
+                            <p class="field-hint" style="margin-bottom:0.5rem;">Describe the reviewer persona in plain text. This overrides your saved profile for this simulation.</p>
+                            <textarea
+                                id="simulate-persona-input"
+                                rows="4"
+                                placeholder="e.g. A budget-conscious Nigerian student who loves streetwear and rates harshly on value-for-money. Dislikes anything flashy but low quality."
+                                style="width:100%; padding:0.875rem 1rem; border:1px solid var(--border-color); border-radius:var(--radius-sm); resize:vertical; font-family:inherit; font-size:0.9rem;"
+                            ></textarea>
+                        </div>
+                    </div>
+
+                    <button class="btn-primary w-full mt-3" id="simulate-run-btn" onclick="simulateReview()">
+                        <i class="ph ph-magic-wand"></i> Generate Simulation
+                    </button>
+                </div>
+
+                <!-- Result panel -->
+                <div id="simulation-result" class="simulation-result hidden" style="margin:0 1.25rem;">
+                    <div class="prediction-card">
+                        <div class="pred-header">
+                            <h3>Predicted Rating</h3>
+                            <div class="confidence">92% Confidence</div>
+                        </div>
+                        <div class="rating-stars huge primary-text">★★★☆☆ (3.4)</div>
+                        <div class="simulated-text">
+                            <h4>Simulated Review:</h4>
+                            <p>"The noise cancellation is actually pretty good, but for this price tag I expected a much better battery life. It feels well built though."</p>
+                        </div>
+                    </div>
+
+                    <div class="explanation-card mt-4">
+                        <h3><i class="ph ph-magic-wand"></i> Agent Reasoning</h3>
+                        <ul class="reasoning-list">
+                            <li><strong>Tone Match:</strong> Concise and slightly critical.</li>
+                            <li><strong>Preference Hit:</strong> "Well built" aligns with user's historical value of durability.</li>
+                            <li><strong>Bias Hit:</strong> User penalizes items heavily for battery/price issues.</li>
+                        </ul>
+                        <button class="btn-outline-small w-full mt-2" onclick="navigateToTab('screen-explain')">View Full Retrieval Context</button>
+                    </div>
+                </div>
+                <div class="spacer-bottom"></div>
+            </div>
+
+            <!-- Screen 9: Recommend Chat (Task 2) -->
+            <div id="screen-recommend" class="tab-content chat-layout">
+                <div class="top-nav shadow">
+                    <span class="nav-title">RECOMMENDATION AGENT</span>
+                    <div>
+                        <button class="icon-btn-small" id="toggle-voice" title="Toggle Voice Agent" onclick="toggleVoice()"><i class="ph ph-speaker-high" id="voice-icon"></i></button>
+                        <button class="icon-btn-small" title="Persona Context" onclick="toggleRecommendPersona()" id="persona-toggle-btn"><i class="ph ph-user-gear"></i></button>
+                    </div>
+                </div>
+
+                <!-- Task 2 banner + persona panel (collapsible) -->
+                <div id="recommend-persona-panel" class="persona-panel" style="display:none;">
+                    <div class="task-banner" style="margin:0 0 0.75rem 0; border-radius:var(--radius-sm);">
+                        <i class="ph-fill ph-list-stars"></i>
+                        <span><strong>Task 2</strong> &mdash; Input a user persona, get personalised recommendations.</span>
+                    </div>
+                    <label style="font-size:0.7rem; font-weight:600; color:var(--muted); letter-spacing:0.06em;">CUSTOM PERSONA (overrides saved profile)</label>
+                    <textarea
+                        id="recommend-persona-input"
+                        rows="3"
+                        placeholder="e.g. A health-conscious Lagos professional who loves street food but avoids anything too spicy or oily. Prefers value deals over premium brands."
+                        style="width:100%; margin-top:0.4rem; padding:0.75rem 1rem; border:1px solid var(--border-color); border-radius:var(--radius-sm); resize:vertical; font-family:inherit; font-size:0.875rem; background:var(--surface-light); color: var(--text-primary);"
+                    ></textarea>
+                    <p class="field-hint" style="margin-top:0.3rem;">Leave blank to use your saved onboarding profile. Examples: movies, food, drinks, travel, books…</p>
+                </div>
+
+                <div class="chat-container" id="chat-messages">
+                    <div class="message system">
+                        <div class="msg-avatar"><i class="ph-fill ph-robot"></i></div>
+                        <div class="msg-bubble" id="chat-welcome-msg">
+                            Hi! I'm your personalized recommendation agent. I've loaded your profile. What are you looking for today?
+                        </div>
+                    </div>
+                    <div class="message user">
+                        <div class="msg-bubble">
+                            I need a new monitor for working from home. Something reliable but not crazy expensive.
+                        </div>
+                    </div>
+                    <div class="message system">
+                        <div class="msg-avatar"><i class="ph-fill ph-robot"></i></div>
+                        <div class="msg-bubble">
+                            <p>Based on your preference for <strong>durability</strong> and strictness on <strong>price-to-value</strong>, here are top picks:</p>
+                            <div class="rec-carousel">
+                                <div class="rec-card">
+                                    <img src="https://loremflickr.com/150/150/monitor?lock=1" style="width:50px;height:50px;border-radius:6px;object-fit:cover;flex-shrink:0;">
+                                    <div class="rec-info">
+                                        <h5>Dell UltraSharp 27"</h5>
+                                        <div class="rec-score">Match: 89%</div>
+                                        <p>Highly durable, good value.</p>
+                                    </div>
+                                </div>
+                                <div class="rec-card">
+                                    <img src="https://loremflickr.com/150/150/monitor?lock=2" style="width:50px;height:50px;border-radius:6px;object-fit:cover;flex-shrink:0;">
+                                    <div class="rec-info">
+                                        <h5>LG 27UN850-W</h5>
+                                        <div class="rec-score">Match: 82%</div>
+                                        <p>Great ergonomics.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="btn-outline-small mt-2" onclick="navigateToTab('screen-explain')">Why these recommendations?</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-input-area" style="display:flex; gap:0.5rem; align-items:center;">
+                    <button class="icon-btn-small" id="mic-btn" onclick="toggleRecording()" style="background:var(--surface-light); border:none; flex-shrink:0;"><i class="ph-fill ph-microphone"></i></button>
+                    <input type="text" placeholder="Ask for recommendations (movies, food, drinks…)" id="chat-input" style="flex:1;">
+                    <button class="send-btn" onclick="sendMessage()"><i class="ph-fill ph-paper-plane-right"></i></button>
+                </div>
+            </div>
+
+            <!-- Screen 10: Evaluation Lab -->
+            <div id="screen-evaluate" class="tab-content scrollable">
+                <div class="top-nav">
+                    <span class="nav-title">EVALUATION LAB</span>
+                    <button class="icon-btn-small"><i class="ph ph-download-simple"></i></button>
+                </div>
+                
+                <div class="padded">
+                    <div class="eval-tabs">
+                        <button class="eval-tab active" onclick="switchEvalTab('taskA')">Task A: Simulation</button>
+                        <button class="eval-tab" onclick="switchEvalTab('taskB')">Task B: Recommendation</button>
+                    </div>
+                    
+                    <div id="eval-taskA" class="eval-content active">
+                        <div class="metrics-grid">
+                            <div class="metric-box">
+                                <div class="val">0.72</div>
+                                <div class="lbl">MAE</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="val">0.95</div>
+                                <div class="lbl">RMSE</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="val">84%</div>
+                                <div class="lbl">Tone Fidelity</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="val">0.89</div>
+                                <div class="lbl">Sentiment Match</div>
+                            </div>
+                        </div>
+                        
+                        <div class="eval-card mt-4">
+                            <h3>Human Evaluation (Sample)</h3>
+                            <div class="progress-row">
+                                <span>Behavioral Fidelity</span>
+                                <div class="bar-wrap"><div class="bar teal" style="width: 85%;"></div></div>
+                                <span>4.2/5</span>
+                            </div>
+                            <div class="progress-row">
+                                <span>Contextual Relevance</span>
+                                <div class="bar-wrap"><div class="bar teal" style="width: 90%;"></div></div>
+                                <span>4.5/5</span>
+                            </div>
+                            <div class="progress-row">
+                                <span>Natural Expression Fit</span>
+                                <div class="bar-wrap"><div class="bar teal" style="width: 78%;"></div></div>
+                                <span>3.9/5</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="eval-taskB" class="eval-content">
+                         <div class="metrics-grid">
+                            <div class="metric-box">
+                                <div class="val">0.32</div>
+                                <div class="lbl">Precision@5</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="val">0.45</div>
+                                <div class="lbl">Recall@5</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="val">0.38</div>
+                                <div class="lbl">NDCG@5</div>
+                            </div>
+                            <div class="metric-box">
+                                <div class="val">0.41</div>
+                                <div class="lbl">MRR</div>
+                            </div>
+                        </div>
+                        
+                        <div class="eval-card mt-4">
+                            <h3>Advanced Capabilities</h3>
+                            <div class="capability-row">
+                                <span>Cold-Start Handling</span>
+                                <span class="badge success">Score: 0.68</span>
+                            </div>
+                            <div class="capability-row">
+                                <span>Cross-Domain Support</span>
+                                <span class="badge warning">Score: 0.52</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="spacer-bottom"></div>
+            </div>
+
+            <!-- Other Screens (Hidden from Nav, accessed via buttons) -->
+            
+            <!-- Screen 14: Explainability -->
+            <div id="screen-explain" class="tab-content scrollable">
+                <div class="top-nav">
+                    <button class="icon-btn" onclick="navigateToTab('screen-simulate')"><i class="ph ph-caret-left"></i></button>
+                    <span class="nav-title">DECISION DETAILS</span>
+                    <span></span>
+                </div>
+                
+                <div class="padded">
+                    <div class="explain-card">
+                        <h3>Retrieval Reasoning</h3>
+                        <p>The agent retrieved the following past reviews to model the prediction:</p>
+                        
+                        <div class="retrieved-item">
+                            <div class="similarity-score">Similarity: 0.88</div>
+                            <h4>Review: Earbuds X2</h4>
+                            <p>"Battery life is unacceptable..." -> Mapped to negative bias on battery life.</p>
+                        </div>
+                        
+                        <div class="retrieved-item">
+                            <div class="similarity-score">Similarity: 0.75</div>
+                            <h4>Review: Ergonomic Chair</h4>
+                            <p>"Sturdy build..." -> Mapped to positive preference for build quality.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="explain-card mt-4">
+                        <h3>Knowledge Graph Path</h3>
+                        <div class="graph-viz">
+                            <div class="node user-node">User_014</div>
+                            <div class="edge">values</div>
+                            <div class="node concept-node">Durability</div>
+                            <div class="edge">has_feature</div>
+                            <div class="node item-node">Item_992</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Screen 11: Dataset Upload -->
+            <div id="screen-dataset" class="tab-content scrollable">
+                <div class="top-nav">
+                    <button class="icon-btn" onclick="navigateToTab('screen-user-model')"><i class="ph ph-caret-left"></i></button>
+                    <span class="nav-title">DATASET UPLOAD</span>
+                    <span></span>
+                </div>
+                
+                <div class="padded text-center">
+                    <div class="upload-area">
+                        <i class="ph ph-file-arrow-up huge-icon"></i>
+                        <h3>Upload Review Data</h3>
+                        <p>Upload a CSV or JSON containing user reviews, items, and ratings.</p>
+                        <button class="btn-outline mt-2">Select File</button>
+                    </div>
+                    
+                    <div class="divider mt-4"><span>OR</span></div>
+                    
+                    <button class="btn-primary w-full mt-4" onclick="navigateToTab('screen-user-model')">Use Synthetic Mock Data</button>
+                </div>
+            </div>
+            
+            <!-- Screen 12: Item Catalog -->
+            <div id="screen-catalog" class="tab-content scrollable">
+                <div class="top-nav">
+                    <button class="icon-btn" onclick="navigateToTab('screen-setup')"><i class="ph ph-caret-left"></i></button>
+                    <span class="nav-title">ITEM CATALOG</span>
+                    <button class="icon-btn-small"><i class="ph ph-plus"></i></button>
+                </div>
+                
+                <div class="padded">
+                    <div class="search-bar">
+                        <i class="ph ph-magnifying-glass"></i>
+                        <input type="text" placeholder="Search catalog...">
+                    </div>
+                    
+                    <div class="catalog-list mt-4">
+                        <div class="catalog-item">
+                            <img src="https://loremflickr.com/150/150/headphones" style="width: 60px; height: 60px; border-radius: 8px; object-fit: cover; flex-shrink: 0;">
+                            <div class="item-details" style="margin-left: 1rem;">
+                                <h4>Item_992: Noise Cancelling Headphones</h4>
+                                <p>Electronics • Audio</p>
+                            </div>
+                        </div>
+                        <div class="catalog-item" style="margin-top: 1rem;">
+                            <img src="https://loremflickr.com/150/150/keyboard" style="width: 60px; height: 60px; border-radius: 8px; object-fit: cover; flex-shrink: 0;">
+                            <div class="item-details" style="margin-left: 1rem;">
+                                <h4>Item_441: Mechanical Keyboard</h4>
+                                <p>Electronics • Accessories</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Screen 13: Review History -->
+            <div id="screen-history" class="tab-content scrollable">
+                <div class="top-nav">
+                    <button class="icon-btn" onclick="navigateToTab('screen-user-model')"><i class="ph ph-caret-left"></i></button>
+                    <span class="nav-title">REVIEW HISTORY</span>
+                    <span></span>
+                </div>
+                
+                <div class="padded">
+                    <p>Showing 142 reviews for User_014</p>
+                    
+                    <div class="history-list mt-4">
+                        <!-- Items populated by JS ideally, but mock here -->
+                         <div class="review-item">
+                            <div class="rating-stars">★★★☆☆</div>
+                            <h4>Item: Wireless Earbuds X2</h4>
+                            <p>"Decent sound but the battery life is completely unacceptable. Lasted only 3 hours."</p>
+                        </div>
+                        <div class="review-item">
+                            <div class="rating-stars">★★★★☆</div>
+                            <h4>Item: Ergonomic Chair Pro</h4>
+                            <p>"Very sturdy build. A bit pricey but worth the investment for my back."</p>
+                        </div>
+                        <div class="review-item">
+                            <div class="rating-stars">★★☆☆☆</div>
+                            <h4>Item: Smart Watch V1</h4>
+                            <p>"UI is clunky and the step counter is highly inaccurate. Disappointed."</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Navigation -->
+            <nav class="bottom-nav">
+                <a href="#" class="nav-item active" onclick="navigateToTab('screen-dashboard')" id="nav-dashboard">
+                    <i class="ph-fill ph-house"></i>
+                    <span>Home</span>
+                </a>
+                <a href="#" class="nav-item" onclick="navigateToTab('screen-user-model')" id="nav-user-model">
+                    <i class="ph-fill ph-user"></i>
+                    <span>Model</span>
+                </a>
+                <a href="#" class="nav-item" onclick="navigateToTab('screen-simulate')" id="nav-simulate">
+                    <i class="ph-fill ph-magic-wand"></i>
+                    <span>Simulate</span>
+                </a>
+                <a href="#" class="nav-item" onclick="navigateToTab('screen-recommend')" id="nav-recommend">
+                    <i class="ph-fill ph-chat-centered-text"></i>
+                    <span>Recommend</span>
+                </a>
+                <a href="#" class="nav-item" onclick="navigateToTab('screen-evaluate')" id="nav-evaluate">
+                    <i class="ph-fill ph-chart-bar"></i>
+                    <span>Evaluate</span>
+                </a>
+            </nav>
+        </div>
+    </div>
+
+    <script>
+// App state and navigation
+let currentScreen = 'screen-splash';
+let currentTab = 'screen-dashboard';
+
+// Initialize App
+document.addEventListener('DOMContentLoaded', () => {
+    // Splash screen animation
+    simulateSplash();
+    
+    // Prevent forms from submitting and handle API
+    document.getElementById('login-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = e.target.querySelector('input[type="email"]').value;
+        const password = e.target.querySelector('input[type="password"]').value;
+        const btn = e.target.querySelector('button');
+        
+        const origText = btn.innerText;
+        btn.innerText = 'Signing In...';
+        btn.disabled = true;
+        
+        try {
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email, password, name: ""})
+            });
+            const data = await res.json();
+            if (res.ok) {
+                localStorage.setItem('user_id', data.user_id);
+                localStorage.setItem('user_name', data.name);
+                navigateTo('main-app');
+            } else {
+                alert(data.detail || "Login failed");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Backend offline. Bypassing for preview...");
+            navigateTo('main-app');
+        }
+        btn.innerText = origText;
+        btn.disabled = false;
+    });
+    
+    document.getElementById('signup-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const inputs = e.target.querySelectorAll('input');
+        const name = inputs[0].value.trim();
+        const email = inputs[1].value.trim();
+        const password = inputs[2].value;
+        const btn = e.target.querySelector('button');
+
+        if (!name || !email || !password) return;
+
+        btn.innerHTML = '<i class="ph ph-circle-notch" style="animation:spin 0.8s linear infinite"></i> Creating Account...';
+        btn.disabled = true;
+
+        // Optimistic: store tentative data immediately and navigate right away
+        const tempId = 'User_' + Date.now();
+        localStorage.setItem('user_id',    tempId);
+        localStorage.setItem('user_email', email);
+        localStorage.setItem('user_name',  name);
+        navigateTo('screen-onboarding');
+
+        // Save to backend in background (non-blocking)
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        try {
+            const res = await fetch('/api/signup', {
+                method:  'POST',
+                headers: {'Content-Type': 'application/json'},
+                body:    JSON.stringify({email, password, name}),
+                signal:  controller.signal
+            });
+            clearTimeout(timeout);
+            const data = await res.json();
+            if (res.ok) {
+                // Update with real server ID
+                localStorage.setItem('user_id', data.user_id);
+                localStorage.setItem('user_name', data.name);
+            }
+        } catch (err) {
+            clearTimeout(timeout);
+            console.warn('Signup background save failed (offline mode):', err.message);
+        }
+
+        btn.innerText = 'Join the Network';
+        btn.disabled = false;
+    });
+
+    // Handle Onboarding form
+    document.getElementById('onboarding-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const reviewer_type = document.getElementById('q1-type').value;
+        const strictness = document.getElementById('q2-strictness').value;
+        const dealbreaker = document.getElementById('q3-dealbreaker').value;
+        const shopping_category = document.getElementById('q4-category').value;
+        const explanation_length = document.getElementById('q5-length').value;
+        const email = localStorage.getItem('user_email') || "preview@domain.com";
+        const btn = e.target.querySelector('button');
+        
+        btn.innerText = 'Saving...';
+        btn.disabled = true;
+        
+        try {
+            await fetch('/api/save_preferences', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email, reviewer_type, strictness, dealbreaker, shopping_category, explanation_length})
+            });
+            navigateTo('main-app');
+        } catch (err) {
+            navigateTo('main-app');
+        }
+    });
+
+    // Handle Profile Picture Upload
+    document.getElementById('profile-pic-upload')?.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const dataUrl = evt.target.result;
+            localStorage.setItem('profile_pic', dataUrl);
+            updateUIWithUser(); // Refresh the UI to show the image
+        };
+        reader.readAsDataURL(file);
+    });
+});
+
+function simulateSplash() {
+    let progress = 0;
+    const progressFill = document.getElementById('splash-progress');
+    const progressText = document.getElementById('splash-progress-text');
+    
+    const interval = setInterval(() => {
+        progress += Math.floor(Math.random() * 15) + 5;
+        if (progress > 100) progress = 100;
+        
+        progressFill.style.width = `${progress}%`;
+        progressText.innerText = `${progress}%`;
+        
+        if (progress === 100) {
+            clearInterval(interval);
+            setTimeout(() => {
+                // Respect ?start= param from landing page CTAs
+                const params = new URLSearchParams(window.location.search);
+                const start  = params.get('start');
+                if (start === 'signup') {
+                    navigateTo('screen-signup');
+                } else {
+                    navigateTo('screen-login');
+                }
+            }, 500);
+        }
+    }, 300);
+}
+
+function navigateTo(screenId) {
+    // Hide all main screens
+    document.querySelectorAll('.screen').forEach(el => {
+        el.classList.remove('active');
+    });
+    
+    // Show target screen
+    document.getElementById(screenId).classList.add('active');
+    currentScreen = screenId;
+    
+    // If navigating to main-app, ensure dashboard is shown and UI is populated
+    if (screenId === 'main-app') {
+        updateUIWithUser();
+        navigateToTab('screen-dashboard');
+    }
+}
+
+function updateUIWithUser() {
+    const name = localStorage.getItem('user_name') || "Agent";
+    
+    // Update Dashboard Welcome
+    const welcomeTitle = document.getElementById('welcome-title');
+    if (welcomeTitle) welcomeTitle.innerText = `Welcome, ${name}`;
+    
+    // Update Profile Screen
+    const modelUsername = document.getElementById('model-username');
+    if (modelUsername) modelUsername.innerText = `${name}'s Profile`;
+    
+    const modelAvatar = document.getElementById('model-avatar');
+    const initialSpan = document.getElementById('model-avatar-initial');
+    const savedPic = localStorage.getItem('profile_pic');
+    
+    if (savedPic && modelAvatar) {
+        // If they have a profile pic, hide initial and set background
+        if(initialSpan) initialSpan.style.display = 'none';
+        modelAvatar.style.backgroundImage = `url(${savedPic})`;
+        modelAvatar.style.backgroundSize = 'cover';
+        modelAvatar.style.backgroundPosition = 'center';
+    } else if (initialSpan) {
+        initialSpan.innerText = name.charAt(0).toUpperCase();
+    }
+    
+    // Update Chat Welcome
+    const welcomeMsg = document.getElementById('chat-welcome-msg');
+    if (welcomeMsg) {
+        welcomeMsg.innerText = `Hi ${name}! I'm your personalized recommendation agent. I've loaded your modeled profile. What are you looking for today? (Try asking for movies, food, drinks, or any product.)`;
+    }
+}
+
+function navigateToTab(tabId) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(el => {
+        el.classList.remove('active');
+    });
+    
+    // Show target tab
+    document.getElementById(tabId).classList.add('active');
+    currentTab = tabId;
+    
+    // Update bottom nav state if applicable
+    document.querySelectorAll('.nav-item').forEach(el => {
+        el.classList.remove('active');
+    });
+    
+    // Map tabs to nav items
+    const navMap = {
+        'screen-dashboard': 'nav-dashboard',
+        'screen-user-model': 'nav-user-model',
+        'screen-simulate': 'nav-simulate',
+        'screen-recommend': 'nav-recommend',
+        'screen-evaluate': 'nav-evaluate'
+    };
+    
+    const activeNav = navMap[tabId];
+    if (activeNav) {
+        document.getElementById(activeNav)?.classList.add('active');
+    }
+}
+
+// User Modeling Action
+async function runExtraction() {
+    const btn = document.querySelector('#screen-user-model .btn-outline-small');
+    const originalText = btn.innerText;
+    btn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> Extracting...';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch('/api/extract_signals', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: 'User_014' })
+        });
+        const data = await response.json();
+        
+        // Update UI with data from backend if needed
+        console.log("Extraction Data:", data);
+        
+        btn.innerText = 'Extraction Complete';
+        btn.style.backgroundColor = 'var(--success)';
+        btn.style.color = 'white';
+        btn.style.borderColor = 'var(--success)';
+    } catch (err) {
+        console.error("Backend Error:", err);
+        btn.innerText = 'Backend Not Connected';
+        btn.style.borderColor = 'var(--danger)';
+        btn.style.color = 'var(--danger)';
+    }
+    
+    setTimeout(() => {
+        btn.innerText = originalText;
+        btn.style.backgroundColor = '';
+        btn.style.color = '';
+        btn.style.borderColor = '';
+        btn.disabled = false;
+    }, 2000);
+}
+
+// ── Task 1: Simulate Review ──────────────────────────────────────────────────
+async function simulateReview() {
+    const btn = document.getElementById('simulate-run-btn');
+    const originalHTML = btn.innerHTML;
+    const resultDiv = document.getElementById('simulation-result');
+
+    // Read inputs
+    const itemInput       = (document.getElementById('simulate-item-input')?.value || '').trim();
+    const catalogueSelect = document.getElementById('simulate-item-select');
+    const itemId          = catalogueSelect ? catalogueSelect.value : 'Item_992';
+    const customPersona   = (document.getElementById('simulate-persona-input')?.value || '').trim();
+    const userId          = localStorage.getItem('user_id') || 'User_014';
+
+    btn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> Simulating…';
+    btn.disabled  = true;
+    resultDiv.classList.add('hidden');
+
+    try {
+        const response = await fetch('/api/simulate', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id:          userId,
+                item_id:          itemId,
+                item_description: itemInput,   // free-text wins on the backend
+                custom_persona:   customPersona
+            })
+        });
+        const data = await response.json();
+
+        // Build star string from float rating
+        const rating  = parseFloat(data.rating) || 0;
+        const filled  = Math.round(rating);
+        const stars   = '★'.repeat(filled) + '☆'.repeat(5 - filled);
+
+        document.querySelector('.prediction-card .rating-stars').innerText =
+            `${stars} (${rating.toFixed(1)})`;
+        document.querySelector('.simulated-text p').innerText  = `"${data.review}"`;
+        document.querySelector('.prediction-card .confidence').innerText =
+            `${data.confidence} Confidence`;
+
+        const reasoningList = document.querySelector('.reasoning-list');
+        reasoningList.innerHTML = '';
+        (data.reasoning || []).forEach(r => {
+            const li = document.createElement('li');
+            li.innerHTML = r;
+            reasoningList.appendChild(li);
+        });
+
+        btn.innerHTML = originalHTML;
+        btn.disabled  = false;
+        resultDiv.classList.remove('hidden');
+
+        // Animate in
+        resultDiv.style.opacity   = '0';
+        resultDiv.style.transform = 'translateY(12px)';
+        setTimeout(() => {
+            resultDiv.style.transition = 'all 0.4s ease';
+            resultDiv.style.opacity    = '1';
+            resultDiv.style.transform  = 'translateY(0)';
+        }, 50);
+
+    } catch (err) {
+        console.error('Backend Error:', err);
+        btn.innerHTML = '<i class="ph ph-warning"></i> Backend offline — showing fallback';
+        btn.disabled  = false;
+
+        // Show fallback result so the UI still demonstrates Task 1
+        document.querySelector('.prediction-card .rating-stars').innerText = '★★★☆☆ (3.4)';
+        document.querySelector('.simulated-text p').innerText =
+            '"The features are good but the price tag doesn\'t justify the battery life. Solid build quality though."';
+        document.querySelector('.prediction-card .confidence').innerText = '92% Confidence';
+        resultDiv.classList.remove('hidden');
+
+        setTimeout(() => { btn.innerHTML = originalHTML; }, 3000);
+    }
+}
+
+// ── Accordion helper (Task 1 persona panel) ──────────────────────────────────
+function toggleAccordion(bodyId, toggleBtn) {
+    const body  = document.getElementById(bodyId);
+    const arrow = toggleBtn.querySelector('.acc-arrow');
+    if (!body) return;
+    const isOpen = body.style.display !== 'none';
+    body.style.display  = isOpen ? 'none' : 'block';
+    if (arrow) arrow.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+
+// ── Persona panel toggle (Task 2) ─────────────────────────────────────────────
+window.toggleRecommendPersona = function() {
+    const panel  = document.getElementById('recommend-persona-panel');
+    const btn    = document.getElementById('persona-toggle-btn');
+    if (!panel) return;
+    const isOpen = panel.style.display !== 'none';
+    panel.style.display = isOpen ? 'none' : 'block';
+    if (btn) btn.style.color = isOpen ? '' : 'var(--primary)';
+};
+
+// Evaluation Tab Switch
+function switchEvalTab(tabName) {
+    document.querySelectorAll('.eval-tab').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.eval-content').forEach(el => el.classList.remove('active'));
+    
+    if (tabName === 'taskA') {
+        document.querySelector('.eval-tab:nth-child(1)').classList.add('active');
+        document.getElementById('eval-taskA').classList.add('active');
+    } else {
+        document.querySelector('.eval-tab:nth-child(2)').classList.add('active');
+        document.getElementById('eval-taskB').classList.add('active');
+    }
+}
+
+// Chat Functionality
+async function sendMessage() {
+    const input = document.getElementById('chat-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+    
+    const chatContainer = document.getElementById('chat-messages');
+    
+    // Add user message
+    const userHTML = `
+        <div class="message user">
+            <div class="msg-bubble">${msg}</div>
+        </div>
+    `;
+    chatContainer.insertAdjacentHTML('beforeend', userHTML);
+    input.value = '';
+    
+    // Scroll to bottom
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    
+    // Simulate agent typing
+    const typingHTML = `
+        <div class="message system" id="typing-indicator">
+            <div class="msg-avatar"><i class="ph-fill ph-robot"></i></div>
+            <div class="msg-bubble"><i class="ph ph-dots-three ph-fill" style="animation: pulse 1s infinite"></i></div>
+        </div>
+    `;
+    chatContainer.insertAdjacentHTML('beforeend', typingHTML);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    
+    // ── Task 2: read custom persona if panel is open ──
+    const customPersonaRec = (document.getElementById('recommend-persona-input')?.value || '').trim();
+
+    try {
+        const response = await fetch('/api/recommend', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id:       localStorage.getItem('user_id') || 'User_014',
+                message:       msg,
+                custom_persona: customPersonaRec
+            })
+        });
+        const data = await response.json();
+        
+        // Remove typing indicator
+        const typingEl = document.getElementById('typing-indicator');
+        if (typingEl) typingEl.remove();
+        
+        let carouselHTML = '';
+        if (data.items && data.items.length > 0) {
+            let cards = data.items.map(item => `
+                <div class="rec-card">
+                    <img src="https://loremflickr.com/150/150/${item.image_keyword || 'product'}?lock=${Math.floor(Math.random()*1000)}" style="width: 50px; height: 50px; border-radius: 6px; object-fit: cover; flex-shrink: 0;" alt="${item.name}">
+                    <div class="rec-info">
+                        <h5>${item.name}</h5>
+                        <div class="rec-score">Match: ${item.score}</div>
+                        <p>${item.reason}</p>
+                    </div>
+                </div>
+            `).join('');
+            carouselHTML = `<div class="rec-carousel">${cards}</div>`;
+        }
+        
+        const agentHTML = `
+            <div class="message system">
+                <div class="msg-avatar"><i class="ph-fill ph-robot"></i></div>
+                <div class="msg-bubble">
+                    <p>${data.response_text}</p>
+                    ${carouselHTML}
+                </div>
+            </div>
+        `;
+        chatContainer.insertAdjacentHTML('beforeend', agentHTML);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        
+        // Speak the agent's response
+        speakText(data.response_text);
+        
+    } catch (err) {
+        console.error("Backend Error:", err);
+        document.getElementById('typing-indicator').remove();
+        chatContainer.insertAdjacentHTML('beforeend', `
+            <div class="message system">
+                <div class="msg-avatar"><i class="ph-fill ph-robot"></i></div>
+                <div class="msg-bubble" style="color: red;">Error: Cannot connect to the Python backend. Make sure it's running.</div>
+            </div>
+        `);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+}
+
+// Allow Enter key to send message
+document.getElementById('chat-input')?.addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
+});
+
+// Logout function
+window.logout = function() {
+    if (confirm('Are you sure you want to log out?')) {
+        // Clear all stored session data
+        ['user_id', 'user_email', 'user_name', 'profile_pic'].forEach(k => localStorage.removeItem(k));
+        // Return to landing page
+        window.location.href = '/';
+    }
+};
+
+// Text-to-Speech Engine
+let voiceEnabled = true;
+
+window.toggleVoice = function() {
+    voiceEnabled = !voiceEnabled;
+    const icon = document.getElementById('voice-icon');
+    if (voiceEnabled) {
+        icon.classList.remove('ph-speaker-slash');
+        icon.classList.add('ph-speaker-high');
+        speakText("Voice response enabled.");
+    } else {
+        icon.classList.remove('ph-speaker-high');
+        icon.classList.add('ph-speaker-slash');
+        window.speechSynthesis.cancel();
+    }
+};
+
+function speakText(text) {
+    if (!voiceEnabled || !window.speechSynthesis) return;
+    
+    // Stop any current audio
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Clean up text (remove markdown asterisks or special characters)
+    const cleanText = text.replace(/\*/g, '');
+    utterance.text = cleanText;
+    
+    // Optional: try to grab a good default voice
+    const voices = window.speechSynthesis.getVoices();
+    const agentVoice = voices.find(v => v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Natural')) || voices[0];
+    if (agentVoice) utterance.voice = agentVoice;
+    
+    utterance.rate = 1.0;
+    utterance.pitch = 1.1; // Slightly higher pitch for a friendly agent tone
+    
+    window.speechSynthesis.speak(utterance);
+}
+
+// Speech-to-Text (Microphone Recording)
+let recognition;
+let isRecording = false;
+
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    
+    recognition.onresult = function(event) {
+        let interimTranscript = '';
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+            } else {
+                interimTranscript += event.results[i][0].transcript;
+            }
+        }
+        
+        const inputField = document.getElementById('chat-input');
+        if (finalTranscript) {
+            inputField.value = finalTranscript;
+        } else {
+            inputField.value = interimTranscript;
+        }
+    };
+    
+    recognition.onerror = function(event) {
+        console.error("Speech recognition error", event.error);
+        stopRecording();
+    };
+    
+    recognition.onend = function() {
+        stopRecording();
+        // Auto-send the message when the user stops talking
+        const inputField = document.getElementById('chat-input');
+        if (inputField && inputField.value.trim() !== '') {
+            sendMessage();
+        }
+    };
+}
+
+window.toggleRecording = function() {
+    if (!recognition) {
+        alert("Speech recognition is not supported in your browser (try Chrome/Edge).");
+        return;
+    }
+    
+    if (isRecording) {
+        stopRecording();
+    } else {
+        startRecording();
+    }
+};
+
+function startRecording() {
+    isRecording = true;
+    const micBtn = document.getElementById('mic-btn');
+    if(micBtn) micBtn.innerHTML = '<i class="ph-fill ph-stop-circle" style="color: red;"></i>';
+    const inputField = document.getElementById('chat-input');
+    if(inputField) inputField.placeholder = "Listening...";
+    recognition.start();
+}
+
+function stopRecording() {
+    isRecording = false;
+    const micBtn = document.getElementById('mic-btn');
+    if(micBtn) micBtn.innerHTML = '<i class="ph-fill ph-microphone"></i>';
+    const inputField = document.getElementById('chat-input');
+    if(inputField) inputField.placeholder = "Ask for recommendations...";
+}
+
+</script>
+</body>
+</html>
