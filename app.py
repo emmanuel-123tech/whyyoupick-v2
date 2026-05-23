@@ -229,7 +229,7 @@ def recommend_items(req: backend.RecommendRequest):
             "Respond to exactly what the user asked. If the catalogue is relevant, you may use catalogue items. "
             "If the user's request is outside or more specific than the catalogue, use general knowledge and say so naturally. "
             "Do not force the answer into the catalogue and do not recommend unrelated default items. "
-            "Give detailed recommendation reviews, not one-line reasons. Each item should explain why it fits, what tradeoff to watch, and who it is best for. "
+            "Give detailed recommendation reviews, not one-line reasons. Each item must include: why it fits the message, what evidence or assumption supports it, what tradeoff to watch, and who it is best for. "
             "Use concrete Nigerian context when helpful, but do not invent exact prices or business claims as facts.\n\n"
             "Return valid JSON only with: language (string), response_text (friendly conversational answer, 3-5 sentences), "
             "items (array of 3-5 objects with: name, item_id, score, reason, detailed_review, best_for, watch_out, category, image_keyword, image_url, source). "
@@ -239,6 +239,8 @@ def recommend_items(req: backend.RecommendRequest):
         try:
             result = _chat_json(prompt, "Return valid JSON only. Be useful, specific, multilingual, and faithful to the user's message.")
             result.setdefault("language", language)
+            result.setdefault("response_text", "Here are options that match what you asked for, with the main fit and tradeoff for each one.")
+            result["agent_version"] = "recommendation-v2"
             catalog_map = {item.get("item_id", ""): item for item in catalog}
             for item in result.get("items", []):
                 catalog_item = catalog_map.get(item.get("item_id", ""), {})
@@ -299,6 +301,7 @@ def _recommend_fallback(message: str, category: str, language: str) -> dict:
         })
     return {
         "language": language,
+        "agent_version": "recommendation-v2-fallback",
         "response_text": intro_by_language.get(language, intro_by_language["English"]),
         "items": items,
     }
