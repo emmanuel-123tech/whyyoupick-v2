@@ -1,0 +1,25 @@
+# Environment variables (contains API keys — NEVER commit this)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# User data (local only, ephemeral on Vercel)
+users.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
