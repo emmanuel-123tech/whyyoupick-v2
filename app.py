@@ -68,13 +68,18 @@ def _image_url(keyword: str) -> str:
 
 def _detect_language(message: str) -> str:
     msg = " {} ".format(message.lower())
-    if any(word in msg for word in [" bawo ", " se ", " jare ", " e jowo ", " mo fe ", " nkan ", " ounje ", " owo "]):
+    if any(word in msg for word in [" bawo ", " jare ", " e jowo ", " mo fe ", " nkan ", " ounje ", " owo "]):
         return "Yoruba"
     if any(word in msg for word in [" kedu ", " biko ", " achoro ", " ezigbo ", " nri ", " ego ", " maka "]):
         return "Igbo"
     if any(word in msg for word in [" sannu ", " ina ", " don Allah ", " abinci ", " kudi ", " lafiya ", " gida "]):
         return "Hausa"
-    if any(word in msg for word in [" abeg ", " make ", " wetin ", " sabi ", " dey ", " no too ", " wahala ", " na "]):
+
+    pidgin_strong = [" abeg ", " wetin ", " sabi ", " dey ", " no too ", " wahala "]
+    pidgin_soft = [" make ", " na ", " sha ", " o "]
+    if any(word in msg for word in pidgin_strong):
+        return "Nigerian Pidgin"
+    if sum(word in msg for word in pidgin_soft) >= 2:
         return "Nigerian Pidgin"
     return "English"
 
