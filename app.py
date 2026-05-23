@@ -20,7 +20,7 @@ def _remove_routes(paths: List[str]):
 
 def _pop_static_mount():
     for idx, route in enumerate(list(app.router.routes)):
-        if getattr(route, "path", None) == "/" and getattr(route, "name", None) == "static":
+        if getattr(route, "name", None) == "static":
             return app.router.routes.pop(idx)
     return None
 
