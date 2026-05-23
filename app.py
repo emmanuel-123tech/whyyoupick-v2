@@ -6,6 +6,7 @@ entrypoint also patches the Vercel routes that need free-form AI behavior.
 """
 
 import json
+import os
 import re
 from typing import List
 
@@ -27,6 +28,16 @@ def _pop_static_mount():
 
 _static_mount = _pop_static_mount()
 _remove_routes(["/api/simulate", "/api/recommend"])
+
+
+def _groq_models() -> List[str]:
+    configured = os.getenv("GROQ_MODEL", "").strip()
+    models = [configured, "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+    unique = []
+    for model in models:
+        if model and model not in unique:
+            unique.append(model)
+    return unique
 
 
 def _fallback_rating(text: str) -> float:
@@ -67,19 +78,32 @@ def _chat_json(prompt: str, system: str) -> dict:
         {"role": "system", "content": system},
         {"role": "user", "content": prompt},
     ]
-    try:
-        response = backend.client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            response_format={"type": "json_object"},
-        )
-    except Exception as first_error:
-        print("Groq JSON-mode retrying without response_format: {}".format(first_error))
-        response = backend.client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-        )
-    return _parse_json_response(response.choices[0].message.content)
+    last_error = None
+    for model in _groq_models():
+        try:
+            response = backend.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                response_format={"type": "json_object"},
+            )
+            result = _parse_json_response(response.choices[0].message.content)
+            result.setdefault("model_used", model)
+            return result
+        except Exception as json_error:
+            last_error = json_error
+            print("Groq model {} JSON-mode failed: {}".format(model, json_error))
+            try:
+                response = backend.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                )
+                result = _parse_json_response(response.choices[0].message.content)
+                result.setdefault("model_used", model)
+                return result
+            except Exception as text_error:
+                last_error = text_error
+                print("Groq model {} text retry failed: {}".format(model, text_error))
+    raise last_error or RuntimeError("No Groq model completed successfully")
 
 
 @app.post("/api/simulate")
