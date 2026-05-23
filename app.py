@@ -49,6 +49,39 @@ def _keyword_name(message: str) -> str:
     return " ".join(words[:5]).title() or "Personalised Pick"
 
 
+def _parse_json_response(text: str) -> dict:
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("empty model response")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if not match:
+            raise
+        return json.loads(match.group(0))
+
+
+def _chat_json(prompt: str, system: str) -> dict:
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": prompt},
+    ]
+    try:
+        response = backend.client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            response_format={"type": "json_object"},
+        )
+    except Exception as first_error:
+        print("Groq JSON-mode retrying without response_format: {}".format(first_error))
+        response = backend.client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+        )
+    return _parse_json_response(response.choices[0].message.content)
+
+
 @app.post("/api/simulate")
 def simulate_review(req: backend.SimulateRequest):
     user_prefs = req.custom_persona.strip() or backend.get_user_preferences(req.user_id)
@@ -89,20 +122,12 @@ def simulate_review(req: backend.SimulateRequest):
             "Only use catalogue metadata if no product description was typed. "
             "Infer category, likely strengths, likely weaknesses, and how this reviewer would react. "
             "Do not reuse stock headphone/battery wording unless the user actually asked about headphones or batteries.\n\n"
-            "Return JSON with: rating (float 1-5), review (2-4 natural sentences), "
+            "Return valid JSON only with: rating (float 1-5), review (2-4 natural sentences), "
             "confidence (string like 88%), reasoning (array of 3-4 specific strings), "
             "used_catalogue (boolean), interpreted_item (short string)."
         ).format(persona_note, item_ctx)
         try:
-            resp = backend.client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": "Return valid JSON only. Be specific to the user's item."},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-            )
-            result = json.loads(resp.choices[0].message.content)
+            result = _chat_json(prompt, "Return valid JSON only. Be specific to the user's item.")
             result["used_catalogue"] = bool(result.get("used_catalogue", used_catalogue))
             result.setdefault("interpreted_item", typed_item or req.item_id or "custom item")
             return result
@@ -154,20 +179,12 @@ def recommend_items(req: backend.RecommendRequest):
             "If the user's request is outside or more specific than the catalogue, use general knowledge and say so naturally. "
             "Do not force the answer into the catalogue and do not recommend unrelated default items. "
             "Think about constraints, intent, tradeoffs, persona fit, budget/value, and likely dealbreakers.\n\n"
-            "Return JSON: response_text (direct helpful answer, 2-4 sentences), "
+            "Return valid JSON only: response_text (direct helpful answer, 2-4 sentences), "
             "items (array of 0-5 objects with name, item_id, score, reason, category, image_keyword, source). "
             "Use item_id only for catalogue items; for general suggestions use an empty item_id and source='general'."
         ).format(persona_note, message, catalog_text)
         try:
-            resp = backend.client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": "Return valid JSON only. Be useful, specific, and faithful to the user's message."},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-            )
-            result = json.loads(resp.choices[0].message.content)
+            result = _chat_json(prompt, "Return valid JSON only. Be useful, specific, and faithful to the user's message.")
             catalog_map = {item.get("item_id", ""): item for item in catalog}
             for item in result.get("items", []):
                 catalog_item = catalog_map.get(item.get("item_id", ""), {})
