@@ -55,9 +55,14 @@ def _infer_category(text: str) -> str:
 
 
 def _keyword_name(message: str) -> str:
-    clean = re.sub(r"[^a-zA-Z0-9\s]", " ", message).strip()
-    words = [word for word in clean.split() if len(word) > 2]
-    return " ".join(words[:5]).title() or "Personalised Pick"
+    clean = re.sub(r"[^a-zA-Z0-9\s]", " ", message).strip().lower()
+    stopwords = {
+        "abeg", "please", "pls", "recommend", "suggest", "show", "give", "make", "wey",
+        "that", "what", "where", "want", "need", "better", "good", "best", "cheap", "affordable",
+        "for", "with", "and", "the", "this", "that", "no", "too", "very", "some", "any",
+    }
+    words = [word for word in clean.split() if len(word) > 2 and word not in stopwords]
+    return " ".join(words[:4]).title() or "Personalised Pick"
 
 
 def _image_url(keyword: str) -> str:
@@ -270,38 +275,79 @@ def recommend_items(req: backend.RecommendRequest):
 
 def _recommend_fallback(message: str, category: str, language: str) -> dict:
     base_name = _keyword_name(message)
+    lowered = message.lower()
+    location = ""
+    for city in ["lagos", "abuja", "ibadan", "port harcourt", "kano", "enugu", "lekki", "ikeja", "wuse", "garki", "yaba"]:
+        if city in lowered:
+            location = city.title()
+            break
+
     intro_by_language = {
-        "Yoruba": "Mo ye ohun ti o n wa. Eyi ni awon aba ti o ba ibeere naa mu, pelu idi, ohun ti o dara fun, ati ohun ti o ye ki o sayewo.",
-        "Igbo": "Aghotara m ihe ichoro. Lee aro ndi dabara na mkpa gi, tinyere uru ha na ihe i kwesiri ilebara anya.",
-        "Hausa": "Na fahimci abin da kake nema. Ga wasu shawarwari masu amfani tare da dalili da abin lura kafin ka zaba.",
-        "Nigerian Pidgin": "I understand wetin you dey find. See better options wey match your request, plus why e make sense and wetin you suppose check before you choose.",
-        "English": "I understand what you are looking for. Here are detailed options based on your request, with why each one fits and what to check before deciding.",
+        "Yoruba": "Mo ye ohun ti o n wa. Groq ko dahun bayii, sugbon mo tun le fun e ni aba to wulo pelu idi ati ohun ti o ye ki o sayewo.",
+        "Igbo": "Aghotara m ihe ichoro. Groq azaghachighi ugbu a, mana ndi a bu aro bara uru i nwere ike itule.",
+        "Hausa": "Na fahimci abin da kake nema. Groq bai amsa yanzu ba, amma ga shawarwari masu amfani da abin lura.",
+        "Nigerian Pidgin": "I understand wetin you dey find. Groq no answer just now, so I use smart local fallback give you options wey still match your request.",
+        "English": "I understand what you are looking for. Groq did not respond just now, so I used a smart local fallback to give you practical options that still match your request.",
     }
-    templates = [
-        ("Best-value {}".format(base_name), "This is the practical first pick because it focuses on the exact need you described while balancing value and usefulness."),
-        ("Reliable {} option".format(base_name), "This is the safer choice if consistency, fewer surprises, and dependable quality matter more than flashy extras."),
-        ("Premium-leaning {}".format(base_name), "This fits when you want a more comfortable or higher-quality experience, but it may cost more than the basic option."),
-    ]
+
+    category_templates = {
+        "Food": [
+            ("Local bukka or mama-put plate", "local Nigerian food", "Best for filling food on a tight budget", "Check hygiene, crowd turnover, and whether the stew or protein is charged separately."),
+            ("Rice-and-protein combo", "jollof rice chicken food", "Best when you want familiar food that is easy to compare across vendors", "Confirm portion size and total price before adding drinks or extra meat."),
+            ("Shawarma, suya, or quick street-food spot", "suya shawarma lagos food", "Best for fast casual food without restaurant-level pricing", "Watch freshness, spice level, and late-night price changes."),
+        ],
+        "Places": [
+            ("Budget hotel in a central area", "budget hotel room", "Best for short stays where location and calm matter more than luxury", "Check recent guest reviews, noise complaints, security, and the checkout policy."),
+            ("Serviced apartment or short-let", "serviced apartment bedroom", "Best if you need privacy, more space, or a quieter two-day stay", "Confirm power backup, cleaning fee, and whether the listing photos are recent."),
+            ("Guest house near your main activity", "guest house accommodation", "Best for lower cost and simpler check-in", "Check distance to your destination, road access at night, and verified reviews."),
+        ],
+        "Electronics": [
+            ("Reliable mid-range option", "electronics gadget", "Best for balancing price, warranty, and everyday performance", "Confirm warranty, seller reputation, and battery or storage specs before paying."),
+            ("Used or open-box deal from a trusted seller", "used electronics", "Best when budget matters but you still want better specs", "Inspect condition, test all functions, and avoid deals without return options."),
+            ("Entry-level new model", "new phone laptop", "Best if you prefer warranty and low risk over peak performance", "Watch for low RAM, weak battery life, or missing accessories."),
+        ],
+        "Fashion": [
+            ("Everyday durable option", "fashion outfit shoes bag", "Best for repeated use and easy styling", "Check stitching, material weight, and return policy."),
+            ("Local market value pick", "fashion market", "Best if you want style at a lower price", "Compare at least two sellers and inspect finishing carefully."),
+            ("Premium-looking basic", "minimal fashion", "Best for a clean look without overspending", "Avoid delicate fabrics if you need daily wear."),
+        ],
+        "Books": [
+            ("Practical beginner-friendly guide", "book guide", "Best for learning quickly without too much theory", "Check publication date and whether examples match your current needs."),
+            ("Highly reviewed reference book", "reference book", "Best for depth and long-term value", "Make sure it is not too advanced for your current level."),
+            ("Digital or used copy", "ebook reading", "Best if price is the main concern", "Confirm edition, readability, and whether diagrams or exercises are included."),
+        ],
+        "General": [
+            ("Best-fit practical option", base_name.lower() or "recommended product", "Best when you want the most sensible first choice", "Check recent reviews, availability, and full cost before deciding."),
+            ("Safer reliable alternative", base_name.lower() or "reliable option", "Best when consistency matters more than extras", "Avoid options with unclear seller details or weak support."),
+            ("Higher-comfort upgrade", base_name.lower() or "premium option", "Best if you can pay a little more for a smoother experience", "Confirm the upgrade is useful for your actual need, not just branding."),
+        ],
+    }
+    templates = category_templates.get(category, category_templates["General"])
+
     items = []
-    for idx, (name, review) in enumerate(templates):
-        keyword = "{} {}".format(base_name, category).strip().lower()
-        detailed_review = "{} It matches the user's request for '{}'. I would compare current reviews, distance or availability, and total cost before making the final decision.".format(review, message)
+    for idx, (name, keyword_base, best_for, watch_out) in enumerate(templates):
+        location_hint = " in {}".format(location) if location else ""
+        keyword = "{} {}".format(keyword_base, location or category).strip().lower()
+        review = (
+            "{}{} is a strong match because it answers the main need in your message: '{}'. "
+            "I would shortlist it first, then compare recent reviews, distance or availability, and the total price before choosing."
+        ).format(name, location_hint, message)
         items.append({
-            "name": name,
+            "name": "{}{}".format(name, location_hint),
             "item_id": "",
-            "score": "{}%".format(88 - idx * 5),
-            "reason": detailed_review,
-            "detailed_review": detailed_review,
-            "best_for": "Someone who wants {} with a sensible balance of value and fit.".format(base_name.lower()),
-            "watch_out": "Confirm recent reviews, real pricing, and availability because these can change quickly.",
+            "score": "{}%".format(90 - idx * 4),
+            "reason": review,
+            "detailed_review": review,
+            "best_for": best_for,
+            "watch_out": watch_out,
             "category": category,
             "image_keyword": keyword,
             "image_url": _image_url(keyword),
-            "source": "general",
+            "source": "smart_fallback",
         })
     return {
         "language": language,
-        "agent_version": "recommendation-v2-fallback",
+        "agent_version": "recommendation-v3-smart-fallback",
         "response_text": intro_by_language.get(language, intro_by_language["English"]),
         "items": items,
     }
